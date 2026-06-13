@@ -1,43 +1,23 @@
 import { useState, useMemo, useCallback } from "react";
 import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
+import { normalizeDeliveryStatus, enrichConnectorOrderDetails, getIsConnectorNoTracking } from "../utils/orders";
+import Filters from "../components/Filters";
 
 import {
   AppProvider,
   Page,
-  Box,
   BlockStack,
-  InlineStack,
-  Popover,
   Button,
-  DatePicker,
-  ActionList,
-  Text,
-  Divider,
-  Select,
 } from '@shopify/polaris';
-import { CalendarIcon, FilterIcon, ExportIcon } from '@shopify/polaris-icons';
+import { ExportIcon } from '@shopify/polaris-icons';
 import '@shopify/polaris/build/esm/styles.css';
 import enTranslations from '@shopify/polaris/locales/en.json';
 
-function normalizeDeliveryStatus(fulfillmentStatus) {
-  const statusLower = (fulfillmentStatus || '').toLowerCase();
-
-  // Explicitly catch failure states first
-  if (statusLower.includes('rto') || statusLower.includes('return') || statusLower.includes('fail') || statusLower.includes('error') || statusLower.includes('canceled') || statusLower.includes('not_delivered')) {
-    return 'RTO';
-  } else if (statusLower === 'delivered') { // Explicit tracking 'delivered' status
-    return 'delivered';
-  } else if (statusLower.includes('out') && statusLower.includes('delivery')) {
-    return 'out_for_delivery';
-  }
-
-  return 'in_transit'; // Covers 'fulfilled', 'in_transit', 'pending', etc.
-}
+// normalizeDeliveryStatus and getThirdPartyConnectorName are imported from app/utils/orders.js
 
 export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
-  const shop = session.shop;
+  const { admin } = await authenticate.admin(request);
 
   // ── 1. Fetch all store products (paginated) ──────────────────────────────
   let allStoreProducts = [];
@@ -104,6 +84,8 @@ export const loader = async ({ request }) => {
                   currencyCode
                 }
               }
+              sourceName
+              tags
               shippingAddress {
                 city
                 province
@@ -139,6 +121,13 @@ export const loader = async ({ request }) => {
     );
 
     const json = await response.json();
+
+    // Guard: if Shopify returns errors (e.g. missing scope), stop and return what we have
+    if (!json.data || !json.data.orders) {
+      console.error('[Orders] Orders query error:', JSON.stringify(json.errors || json));
+      break;
+    }
+
     const ordersPage = json.data.orders;
 
     allRawOrders.push(...ordersPage.edges.map((edge) => edge.node));
@@ -153,6 +142,8 @@ export const loader = async ({ request }) => {
     const shippingCity = (order.shippingAddress?.city || '').trim();
     const shippingState = (order.shippingAddress?.province || '').trim();
     const shippingPincode = (order.shippingAddress?.zip || '').trim();
+
+    const connectorDetails = enrichConnectorOrderDetails(order);
 
     if (order.fulfillments && order.fulfillments.length > 0) {
       const enrichedFulfillments = order.fulfillments.map((fulfillment) => {
@@ -170,9 +161,9 @@ export const loader = async ({ request }) => {
         }
         return { ...fulfillment, trackingInfo };
       });
-      return { ...order, fulfillments: enrichedFulfillments, orderDeliveryStatus, shippingCity, shippingState, shippingPincode };
+      return { ...order, fulfillments: enrichedFulfillments, orderDeliveryStatus, shippingCity, shippingState, shippingPincode, ...connectorDetails };
     }
-    return { ...order, orderDeliveryStatus, shippingCity, shippingState, shippingPincode };
+    return { ...order, orderDeliveryStatus, shippingCity, shippingState, shippingPincode, ...connectorDetails };
   });
 
   return { orders: enhancedOrders, storeProducts };
@@ -181,127 +172,20 @@ export const loader = async ({ request }) => {
 export default function Orders() {
   const { orders, storeProducts } = useLoaderData();
 
-  const [datePopoverActive, setDatePopoverActive] = useState(false);
-  const toggleDatePopover = useCallback(() => setDatePopoverActive((active) => !active), []);
-
-  const [selectedDates, setSelectedDates] = useState({
-    start: new Date(new Date().setDate(new Date().getDate() - 30)),
-    end: new Date(),
+  const [selectedDates, setSelectedDates] = useState(() => {
+    const end = new Date();
+    end.setHours(0, 0, 0, 0);
+    const start = new Date(end);
+    start.setDate(end.getDate() - 29);
+    return { start, end };
   });
 
-  const [{ month, year }, setDate] = useState({
-    month: selectedDates.end.getMonth(),
-    year: selectedDates.end.getFullYear(),
-  });
-
-  const [presetFilter, setPresetFilter] = useState('last30');
-
-  const presetOptions = [
-    { label: 'Today', value: 'today' },
-    { label: 'Yesterday', value: 'yesterday' },
-    { label: 'Last 7 days', value: 'last7' },
-    { label: 'Last 30 days', value: 'last30' },
-    { label: 'Last 90 days', value: 'last90' },
-    { label: 'Last month', value: 'lastMonth' },
-    { label: 'Custom', value: 'custom' },
-  ];
-
-  const handlePresetChange = useCallback((value) => {
-    setPresetFilter(value);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    let start, end;
-    switch (value) {
-      case 'today':
-        start = today;
-        end = today;
-        break;
-      case 'yesterday':
-        start = new Date(today);
-        start.setDate(today.getDate() - 1);
-        end = new Date(today);
-        end.setDate(today.getDate() - 1);
-        break;
-      case 'last7':
-        start = new Date(today);
-        start.setDate(today.getDate() - 6);
-        end = today;
-        break;
-      case 'last30':
-        start = new Date(today);
-        start.setDate(today.getDate() - 29);
-        end = today;
-        break;
-      case 'last90':
-        start = new Date(today);
-        start.setDate(today.getDate() - 89);
-        end = today;
-        break;
-      case 'lastMonth':
-        start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        end = new Date(now.getFullYear(), now.getMonth(), 0);
-        break;
-      case 'custom':
-        return;
-      default:
-        return;
-    }
-
-    setSelectedDates({ start, end });
-    setDate({ month: end.getMonth(), year: end.getFullYear() });
-  }, []);
-
-  const [productPopoverActive, setProductPopoverActive] = useState(false);
-  const toggleProductPopover = useCallback(() => setProductPopoverActive((active) => !active), []);
   const [productFilter, setProductFilter] = useState("All Product Types");
-
-  const [deliveryStatusPopoverActive, setDeliveryStatusPopoverActive] = useState(false);
-  const toggleDeliveryStatusPopover = useCallback(() => setDeliveryStatusPopoverActive((active) => !active), []);
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState("All Statuses");
-
-  // State / City / Pincode Filter State
-  const [statePopoverActive, setStatePopoverActive] = useState(false);
-  const toggleStatePopover = useCallback(() => setStatePopoverActive((a) => !a), []);
   const [stateFilter, setStateFilter] = useState("All States");
-
-  const [cityPopoverActive, setCityPopoverActive] = useState(false);
-  const toggleCityPopover = useCallback(() => setCityPopoverActive((a) => !a), []);
   const [cityFilter, setCityFilter] = useState("All Cities");
-
-  const [pincodePopoverActive, setPincodePopoverActive] = useState(false);
-  const togglePincodePopover = useCallback(() => setPincodePopoverActive((a) => !a), []);
   const [pincodeFilter, setPincodeFilter] = useState("All Pincodes");
-
-  // Use store products directly (from loader) — only real catalog products appear here
-  const uniqueProducts = useMemo(() => storeProducts, [storeProducts]);
-
-  // Unique states, cities, pincodes (cascading)
-  const uniqueStates = useMemo(() => {
-    const vals = new Set();
-    orders.forEach(o => { if (o.shippingState) vals.add(o.shippingState); });
-    return Array.from(vals).sort();
-  }, [orders]);
-
-  const uniqueCities = useMemo(() => {
-    const vals = new Set();
-    orders.forEach(o => {
-      if (stateFilter === "All States" || o.shippingState === stateFilter) {
-        if (o.shippingCity) vals.add(o.shippingCity);
-      }
-    });
-    return Array.from(vals).sort();
-  }, [orders, stateFilter]);
-
-  const uniquePincodes = useMemo(() => {
-    const vals = new Set();
-    orders.forEach(o => {
-      const stateMatch = stateFilter === "All States" || o.shippingState === stateFilter;
-      const cityMatch = cityFilter === "All Cities" || o.shippingCity === cityFilter;
-      if (stateMatch && cityMatch && o.shippingPincode) vals.add(o.shippingPincode);
-    });
-    return Array.from(vals).sort();
-  }, [orders, stateFilter, cityFilter]);
+  const [courierFilter, setCourierFilter] = useState("All Couriers");
 
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
@@ -333,58 +217,37 @@ export default function Orders() {
         if (deliveryStatusFilter === "Delivered") {
           statusMatches = (orderStatus === 'delivered' || orderStatus === 'fulfilled');
         } else if (deliveryStatusFilter === "In-Transit") {
-          statusMatches = (orderStatus === 'in_transit' || orderStatus === 'out_for_delivery');
-        } else if (deliveryStatusFilter === "Failed") {
-          statusMatches = (orderStatus === 'RTO' || orderStatus === 'rto_failed');
+          const isConnectorNoTracking = getIsConnectorNoTracking(order);
+          statusMatches = !isConnectorNoTracking && (orderStatus === 'in_transit' || orderStatus === 'out_for_delivery');
+        } else if (deliveryStatusFilter === "RTO") {
+          statusMatches = (orderStatus === 'rto_failed');
+        } else if (deliveryStatusFilter.startsWith("Dispatched by ")) {
+          const connName = deliveryStatusFilter.replace("Dispatched by ", "");
+          const isConnectorNoTracking = getIsConnectorNoTracking(order, connName);
+          statusMatches = isConnectorNoTracking;
         }
         if (!statusMatches) return false;
       }
 
-      // 4. State Filter
-      if (stateFilter !== "All States") {
-        if (order.shippingState !== stateFilter) return false;
-      }
-
-      // 5. City Filter
-      if (cityFilter !== "All Cities") {
-        if (order.shippingCity !== cityFilter) return false;
-      }
-
-      // 6. Pincode Filter
-      if (pincodeFilter !== "All Pincodes") {
-        if (order.shippingPincode !== pincodeFilter) return false;
-      }
+      if (stateFilter !== "All States" && order.shippingState !== stateFilter) return false;
+      if (cityFilter !== "All Cities" && order.shippingCity !== cityFilter) return false;
+      if (pincodeFilter !== "All Pincodes" && order.shippingPincode !== pincodeFilter) return false;
+      if (courierFilter !== "All Couriers" && order.fulfillments?.[0]?.trackingInfo?.[0]?.company?.trim() !== courierFilter) return false;
 
       return true;
     });
-  }, [orders, selectedDates, productFilter, deliveryStatusFilter, stateFilter, cityFilter, pincodeFilter]);
+  }, [orders, selectedDates, productFilter, deliveryStatusFilter, stateFilter, cityFilter, pincodeFilter, courierFilter]);
 
   const handleExportCSV = useCallback(() => {
-    const headers = [
-      'Order',
-      'Order Date',
-      'Customer',
-      'Items',
-      'Tracking Status',
-      'Fulfillment Status',
-      'Amount (Rs.)',
-      'Payment Status',
-      'State',
-      'City',
-      'Pincode',
-    ];
-
+    const headers = ['Order', 'Order Date', 'Customer', 'Items', 'Tracking Status', 'Fulfillment Status', 'Amount (Rs.)', 'Payment Status', 'State', 'City', 'Pincode'];
     const rows = filteredOrders.map(order => {
-      const customerName = order.customer
-        ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim() || 'No Customer'
-        : 'No Customer';
-
-      const items = order.lineItems?.edges
-        ?.map(e => `${e.node.title} x${e.node.quantity}`)
-        .join(' | ') || '';
-
+      const customerName = order.customer ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim() || 'No Customer' : 'No Customer';
+      const items = order.lineItems?.edges?.map(e => `${e.node.title} x${e.node.quantity}`).join(' | ') || '';
       let trackingStatus = 'N/A';
-      if (order.fulfillments && order.fulfillments.length > 0) {
+      const isConnectorNoTracking = getIsConnectorNoTracking(order);
+      if (isConnectorNoTracking) {
+        trackingStatus = `Dispatched by ${order.connectorName}`;
+      } else if (order.fulfillments && order.fulfillments.length > 0) {
         const f = order.fulfillments[0];
         if (f.trackingInfo && f.trackingInfo.length > 0) {
           trackingStatus = f.trackingInfo[0].courierDeliveryStatus || 'in_transit';
@@ -392,29 +255,20 @@ export default function Orders() {
           trackingStatus = normalizeDeliveryStatus(f.displayStatus || f.status);
         }
       }
+      
+      let displayTracking = trackingStatus;
+      if (trackingStatus === 'rto_failed') displayTracking = 'RTO';
+      else if (trackingStatus === 'in_transit') displayTracking = 'In Transit';
+      else if (trackingStatus === 'out_for_delivery') displayTracking = 'Out for Delivery';
+      else if (trackingStatus === 'delivered') displayTracking = 'Delivered';
+      else if (trackingStatus.startsWith('dispatched_by_')) {
+        displayTracking = `Dispatched by ${trackingStatus.replace('dispatched_by_', '').toUpperCase()}`;
+      }
 
-      const orderDate = new Date(order.createdAt).toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'short', year: 'numeric',
-      });
-
-      // Escape commas/quotes in cell values
+      const orderDate = new Date(order.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
       const escape = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
-
-      return [
-        escape(order.name),
-        escape(orderDate),
-        escape(customerName),
-        escape(items),
-        escape(trackingStatus),
-        escape(order.displayFulfillmentStatus || 'UNFULFILLED'),
-        escape(order.totalPriceSet?.shopMoney?.amount || '0.00'),
-        escape(order.displayFinancialStatus || 'N/A'),
-        escape(order.shippingState || ''),
-        escape(order.shippingCity || ''),
-        escape(order.shippingPincode || ''),
-      ].join(',');
+      return [escape(order.name), escape(orderDate), escape(customerName), escape(items), escape(displayTracking), escape(order.displayFulfillmentStatus || 'UNFULFILLED'), escape(order.totalPriceSet?.shopMoney?.amount || '0.00'), escape(order.displayFinancialStatus || 'N/A'), escape(order.shippingState || ''), escape(order.shippingCity || ''), escape(order.shippingPincode || '')].join(',');
     });
-
     const csvContent = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -428,245 +282,69 @@ export default function Orders() {
     URL.revokeObjectURL(url);
   }, [filteredOrders]);
 
-  const handleDateSelection = useCallback(
-    (value) => {
-      setSelectedDates(value);
-      setPresetFilter('custom');
-    },
-    [],
-  );
-
-  const formatDateForComparison = (start, end) => {
-    const startStr = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    const endStr = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    return `${startStr} - ${endStr}`;
-  };
-
-  const formatDateForInput = (date) => {
-    return `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
-  };
-
-  const dateButton = (
-    <Button onClick={toggleDatePopover} icon={CalendarIcon}>
-      {presetOptions.find(o => o.value === presetFilter)?.label || 'Custom'}
-    </Button>
-  );
-
-  const productActivator = (
-    <Button onClick={toggleProductPopover} icon={FilterIcon}>
-      {productFilter}
-    </Button>
-  );
-
-  const productOptions = [
-    { content: "All Product Types", onAction: () => { setProductFilter("All Product Types"); toggleProductPopover(); } },
-    ...uniqueProducts.map(fp => ({
-      content: fp,
-      onAction: () => { setProductFilter(fp); toggleProductPopover(); }
-    }))
-  ];
-
-  const deliveryStatusActivator = (
-    <Button onClick={toggleDeliveryStatusPopover} icon={FilterIcon}>
-      {deliveryStatusFilter}
-    </Button>
-  );
-
-  const deliveryStatusOptions = [
-    { content: "All Statuses", onAction: () => { setDeliveryStatusFilter("All Statuses"); toggleDeliveryStatusPopover(); } },
-    { content: "In-Transit", onAction: () => { setDeliveryStatusFilter("In-Transit"); toggleDeliveryStatusPopover(); } },
-    { content: "Delivered", onAction: () => { setDeliveryStatusFilter("Delivered"); toggleDeliveryStatusPopover(); } },
-    { content: "Failed", onAction: () => { setDeliveryStatusFilter("Failed"); toggleDeliveryStatusPopover(); } }
-  ];
-
-  // State / City / Pincode action lists
-  const stateOptions = [
-    { content: "All States", onAction: () => { setStateFilter("All States"); setCityFilter("All Cities"); setPincodeFilter("All Pincodes"); toggleStatePopover(); } },
-    ...uniqueStates.map(s => ({
-      content: s,
-      onAction: () => { setStateFilter(s); setCityFilter("All Cities"); setPincodeFilter("All Pincodes"); toggleStatePopover(); }
-    }))
-  ];
-
-  const cityOptions = [
-    { content: "All Cities", onAction: () => { setCityFilter("All Cities"); setPincodeFilter("All Pincodes"); toggleCityPopover(); } },
-    ...uniqueCities.map(c => ({
-      content: c,
-      onAction: () => { setCityFilter(c); setPincodeFilter("All Pincodes"); toggleCityPopover(); }
-    }))
-  ];
-
-  const pincodeOptions = [
-    { content: "All Pincodes", onAction: () => { setPincodeFilter("All Pincodes"); togglePincodePopover(); } },
-    ...uniquePincodes.map(p => ({
-      content: p,
-      onAction: () => { setPincodeFilter(p); togglePincodePopover(); }
-    }))
-  ];
 
   const getStatusBadge = (status) => {
-    let bgColor = "#f3f4f6";
-    let textColor = "#374151";
-
+    let bgColor = "#f3f4f6", textColor = "#374151";
+    let text = status.replace(/_/g, " ");
     if (status === "delivered") { bgColor = "#dcfce7"; textColor = "#166534"; }
     else if (status === "in_transit") { bgColor = "#dbeafe"; textColor = "#1e40af"; }
     else if (status === "out_for_delivery") { bgColor = "#fef08a"; textColor = "#854d0e"; }
-    else if (status === "RTO" || status === "failed" || status === "rto_failed") { bgColor = "#fee2e2"; textColor = "#991b1b"; }
-
-    return (
-      <span style={{ backgroundColor: bgColor, color: textColor, padding: "4px 12px", borderRadius: "16px", fontSize: "12px", fontWeight: "600", textTransform: "capitalize", whiteSpace: "nowrap" }}>
-        {status.replace(/_/g, " ")}
-      </span>
-    );
+    else if (status === "rto_failed") { bgColor = "#fee2e2"; textColor = "#991b1b"; text = "RTO"; }
+    else if (status.startsWith("dispatched_by_")) { bgColor = "#e0f2fe"; textColor = "#0369a1"; text = `Dispatched by ${status.replace("dispatched_by_", "").toUpperCase()}`; }
+    return <span style={{ backgroundColor: bgColor, color: textColor, padding: "4px 12px", borderRadius: "16px", fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap" }}>{text}</span>;
   };
 
   const getFulfillmentBadge = (status) => {
-    let bgColor = "#fef08a"; // yellow for unfulfilled
-    let textColor = "#854d0e";
     const s = (status || "").toLowerCase();
-    if (s === "fulfilled") { bgColor = "#dcfce7"; textColor = "#166534"; } // green for fulfilled
-
-    return (
-      <span style={{ backgroundColor: bgColor, color: textColor, padding: "4px 12px", borderRadius: "16px", fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap" }}>
-        {status || "UNFULFILLED"}
-      </span>
-    );
+    const isFulfilled = s === "fulfilled";
+    return <span style={{ backgroundColor: isFulfilled ? "#dcfce7" : "#fef08a", color: isFulfilled ? "#166534" : "#854d0e", padding: "4px 12px", borderRadius: "16px", fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap" }}>{status || "UNFULFILLED"}</span>;
   };
 
   const getPaymentBadge = (status) => {
-    let bgColor = "#dbeafe";
-    let textColor = "#1e40af";
     const s = (status || "").toLowerCase();
-    if (s === "paid") { bgColor = "#dcfce7"; textColor = "#166534"; }
-
-    return (
-      <span style={{ backgroundColor: bgColor, color: textColor, padding: "4px 12px", borderRadius: "16px", fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap" }}>
-        {status || "N/A"}
-      </span>
-    );
+    const isPaid = s === "paid";
+    return <span style={{ backgroundColor: isPaid ? "#dcfce7" : "#dbeafe", color: isPaid ? "#166534" : "#1e40af", padding: "4px 12px", borderRadius: "16px", fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap" }}>{status || "N/A"}</span>;
   };
 
   return (
     <AppProvider i18n={enTranslations}>
       <div style={{ padding: "2rem" }}>
-        <Page
-          title="Orders"
-          fullWidth
-          primaryAction={
-            <Button
-              icon={ExportIcon}
-              variant="primary"
-              onClick={handleExportCSV}
-              disabled={filteredOrders.length === 0}
-            >
-              Export CSV ({filteredOrders.length})
-            </Button>
-          }
-        >
+        <Page title="Orders" fullWidth primaryAction={<Button icon={ExportIcon} variant="primary" onClick={handleExportCSV} disabled={filteredOrders.length === 0}>Export CSV ({filteredOrders.length})</Button>}>
           <BlockStack gap="400">
-            <InlineStack gap="400" blockAlign="center" wrap={false}>
-              <Popover active={datePopoverActive} activator={dateButton} autofocusTarget="none" onClose={toggleDatePopover} fluidContent>
-                <Box padding="400" width="650px">
-                  <BlockStack gap="400">
-                    <div style={{ marginBottom: "4px" }}>
-                      <Select options={presetOptions} value={presetFilter} onChange={handlePresetChange} label="Date range" />
-                    </div>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px', fontWeight: '500', color: '#1a1a1a', marginBottom: '6px' }}>Starting</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #c9cccf', borderRadius: '8px', padding: '8px 12px', background: '#fff' }}>
-                          <svg width="14" height="14" viewBox="0 0 20 20" fill="#5c5f62"><path d="M7 2a1 1 0 0 0-1 1v1H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V3a1 1 0 0 0-2 0v1H8V3a1 1 0 0 0-1-1ZM4 8h12v9H4V8Z" /></svg>
-                          <span style={{ fontSize: '14px', color: '#1a1a1a' }}>{formatDateForInput(selectedDates.start)}</span>
-                        </div>
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px', fontWeight: '500', color: '#1a1a1a', marginBottom: '6px' }}>Ending</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #c9cccf', borderRadius: '8px', padding: '8px 12px', background: '#fff' }}>
-                          <svg width="14" height="14" viewBox="0 0 20 20" fill="#5c5f62"><path d="M7 2a1 1 0 0 0-1 1v1H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V3a1 1 0 0 0-2 0v1H8V3a1 1 0 0 0-1-1ZM4 8h12v9H4V8Z" /></svg>
-                          <span style={{ fontSize: '14px', color: '#1a1a1a' }}>{formatDateForInput(selectedDates.end)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <DatePicker month={month} year={year} onChange={handleDateSelection} onMonthChange={(month, year) => setDate({ month, year })} selected={selectedDates} multiMonth allowRange />
-                    <Divider />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px' }}>
-                      <Button onClick={toggleDatePopover}>Cancel</Button>
-                      <Button onClick={toggleDatePopover} variant="primary" tone="success">Apply</Button>
-                    </div>
-                  </BlockStack>
-                </Box>
-              </Popover>
-
-              <Text as="span" tone="subdued">Compared to {formatDateForComparison(selectedDates.start, selectedDates.end)}</Text>
-
-              <Popover active={productPopoverActive} activator={productActivator} onClose={toggleProductPopover}>
-                <div style={{ minWidth: "200px" }}><ActionList items={productOptions} /></div>
-              </Popover>
-
-              <Popover active={deliveryStatusPopoverActive} activator={deliveryStatusActivator} onClose={toggleDeliveryStatusPopover}>
-                <div style={{ minWidth: "150px" }}><ActionList items={deliveryStatusOptions} /></div>
-              </Popover>
-
-              {/* State Filter */}
-              <Popover
-                active={statePopoverActive}
-                activator={
-                  <Button onClick={toggleStatePopover} icon={FilterIcon}>
-                    {stateFilter}
-                  </Button>
-                }
-                onClose={toggleStatePopover}
-              >
-                <div style={{ minWidth: "180px", maxHeight: "260px", overflowY: "auto" }}>
-                  <ActionList items={stateOptions} />
-                </div>
-              </Popover>
-
-              {/* City Filter */}
-              <Popover
-                active={cityPopoverActive}
-                activator={
-                  <Button onClick={toggleCityPopover} icon={FilterIcon}>
-                    {cityFilter}
-                  </Button>
-                }
-                onClose={toggleCityPopover}
-              >
-                <div style={{ minWidth: "180px", maxHeight: "260px", overflowY: "auto" }}>
-                  <ActionList items={cityOptions} />
-                </div>
-              </Popover>
-
-              {/* Pincode Filter */}
-              <Popover
-                active={pincodePopoverActive}
-                activator={
-                  <Button onClick={togglePincodePopover} icon={FilterIcon}>
-                    {pincodeFilter}
-                  </Button>
-                }
-                onClose={togglePincodePopover}
-              >
-                <div style={{ minWidth: "160px", maxHeight: "260px", overflowY: "auto" }}>
-                  <ActionList items={pincodeOptions} />
-                </div>
-              </Popover>
-            </InlineStack>
+            <Filters
+              orders={orders}
+              storeProducts={storeProducts}
+              selectedDates={selectedDates}
+              setSelectedDates={setSelectedDates}
+              productFilter={productFilter}
+              setProductFilter={setProductFilter}
+              deliveryStatusFilter={deliveryStatusFilter}
+              setDeliveryStatusFilter={setDeliveryStatusFilter}
+              stateFilter={stateFilter}
+              setStateFilter={setStateFilter}
+              cityFilter={cityFilter}
+              setCityFilter={setCityFilter}
+              pincodeFilter={pincodeFilter}
+              setPincodeFilter={setPincodeFilter}
+              courierFilter={courierFilter}
+              setCourierFilter={setCourierFilter}
+              variant="orders"
+            />
 
             <div style={{ backgroundColor: "#fff", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", overflow: "hidden", marginTop: "16px" }}>
               <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", tableLayout: "fixed" }}>
+                <table style={{ width: "100%", minWidth: "1280px", borderCollapse: "collapse", textAlign: "left", tableLayout: "fixed" }}>
                   <colgroup>
-                    <col style={{ width: "100px" }} />{/* Order */}
-                    <col style={{ width: "110px" }} />{/* Order Date */}
-                    <col style={{ width: "150px" }} />{/* Customer */}
-                    <col style={{ width: "260px" }} />{/* Item */}
-                    <col style={{ width: "130px" }} />{/* Tracking Status */}
-                    <col style={{ width: "120px" }} />{/* Fulfillment */}
-                    <col style={{ width: "150px" }} />{/* Payment */}
-                    <col style={{ width: "110px" }} />{/* State */}
-                    <col style={{ width: "150px" }} />{/* City */}
-                    <col style={{ width: "100px" }} />{/* Pincode */}
+                    <col style={{ width: "100px" }} />
+                    <col style={{ width: "120px" }} />
+                    <col style={{ width: "150px" }} />
+                    <col style={{ width: "250px" }} />
+                    <col style={{ width: "190px" }} />
+                    <col style={{ width: "120px" }} />
+                    <col style={{ width: "130px" }} />
+                    <col style={{ width: "110px" }} />
+                    <col style={{ width: "120px" }} />
+                    <col style={{ width: "90px" }} />
                   </colgroup>
                   <thead style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
                     <tr>
@@ -687,10 +365,15 @@ export default function Orders() {
                       <tr><td colSpan="10" style={{ padding: "24px", textAlign: "center", color: "#6b7280" }}>No orders found matching filters</td></tr>
                     ) : (
                       filteredOrders.map((order, index) => {
-                        const customerName = order.customer ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() || "No Customer" : "No Customer";
+                        const customerName = order.customer
+                          ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() || "No Customer"
+                          : "No Customer";
 
                         let trackingStatus = "N/A";
-                        if (order.fulfillments && order.fulfillments.length > 0) {
+                        const isConnectorNoTracking = getIsConnectorNoTracking(order);
+                        if (isConnectorNoTracking) {
+                          trackingStatus = `dispatched_by_${order.connectorName.toLowerCase()}`;
+                        } else if (order.fulfillments && order.fulfillments.length > 0) {
                           const f = order.fulfillments[0];
                           if (f.trackingInfo && f.trackingInfo.length > 0) {
                             trackingStatus = f.trackingInfo[0].courierDeliveryStatus || "in_transit";

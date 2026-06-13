@@ -1,22 +1,20 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
+import { normalizeDeliveryStatus, enrichConnectorOrderDetails, getIsConnectorNoTracking } from "../utils/orders";
+import ProductRTO from "../components/ProductRTO";
+import RTOAnalysis from "../components/RTOAnalysis";
+import IndiaHeatMap from "../components/IndiaHeatMap";
+import Filters from "../components/Filters";
+import ConnectorStatusCard from "../components/ConnectorStatusCard";
+import RevenueCards from "../components/RevenueCards";
+import ProductRevenue from "../components/ProductRevenue";
 
 import {
   AppProvider,
   Page,
-  Box,
   BlockStack,
-  InlineStack,
-  Popover,
-  Button,
-  DatePicker,
-  ActionList,
-  Text,
-  Divider,
-  Select,
 } from '@shopify/polaris';
-import { CalendarIcon, FilterIcon } from '@shopify/polaris-icons';
 import '@shopify/polaris/build/esm/styles.css';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import {
@@ -33,24 +31,10 @@ import {
   Cell
 } from 'recharts';
 
-function normalizeDeliveryStatus(fulfillmentStatus) {
-  const statusLower = (fulfillmentStatus || '').toLowerCase();
-
-  // Explicitly catch failure states first
-  if (statusLower.includes('rto') || statusLower.includes('return') || statusLower.includes('fail') || statusLower.includes('error') || statusLower.includes('canceled') || statusLower.includes('not_delivered')) {
-    return 'rto_failed';
-  } else if (statusLower === 'delivered') { // Explicit 'delivered' check without wildcards or fulfilled
-    return 'delivered';
-  } else if (statusLower.includes('out') && statusLower.includes('delivery')) {
-    return 'out_for_delivery';
-  }
-
-  return 'in_transit'; // Covers 'fulfilled', 'in_transit', 'pending', etc.
-}
+// normalizeDeliveryStatus and getThirdPartyConnectorName are imported from app/utils/orders.js
 
 export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
-  const shop = session.shop;
+  const { admin } = await authenticate.admin(request);
 
   // ── 1. Fetch all store products (paginated) ──────────────────────────────
   let allStoreProducts = [];
@@ -111,6 +95,8 @@ export const loader = async ({ request }) => {
                   amount
                 }
               }
+              sourceName
+              tags
               shippingAddress {
                 city
                 province
@@ -120,6 +106,12 @@ export const loader = async ({ request }) => {
                 edges {
                   node {
                     title
+                    quantity
+                    originalUnitPriceSet {
+                      shopMoney {
+                        amount
+                      }
+                    }
                     product {
                       id
                       productType
@@ -136,6 +128,11 @@ export const loader = async ({ request }) => {
                   company
                 }
               }
+              customAttributes {
+                key
+                value
+              }
+              returnStatus
             }
           }
         }
@@ -144,6 +141,13 @@ export const loader = async ({ request }) => {
     );
 
     const json = await response.json();
+
+    // Guard: if Shopify returns errors (e.g. missing scope), stop and return what we have
+    if (!json.data || !json.data.orders) {
+      console.error('[RTO-Predictor] Orders query error:', JSON.stringify(json.errors || json));
+      break;
+    }
+
     const ordersPage = json.data.orders;
 
     allRawOrders.push(...ordersPage.edges.map((edge) => edge.node));
@@ -158,6 +162,7 @@ export const loader = async ({ request }) => {
     const shippingCity = (order.shippingAddress?.city || '').trim();
     const shippingState = (order.shippingAddress?.province || '').trim();
     const shippingPincode = (order.shippingAddress?.zip || '').trim();
+    const connectorDetails = enrichConnectorOrderDetails(order);
 
     if (order.fulfillments && order.fulfillments.length > 0) {
       const enrichedFulfillments = order.fulfillments.map((fulfillment) => {
@@ -175,19 +180,21 @@ export const loader = async ({ request }) => {
         }
         return { ...fulfillment, trackingInfo };
       });
-      return { ...order, fulfillments: enrichedFulfillments, orderDeliveryStatus, shippingCity, shippingState, shippingPincode };
+      return { ...order, fulfillments: enrichedFulfillments, orderDeliveryStatus, shippingCity, shippingState, shippingPincode, ...connectorDetails };
     }
-    return { ...order, orderDeliveryStatus, shippingCity, shippingState, shippingPincode };
+    return { ...order, orderDeliveryStatus, shippingCity, shippingState, shippingPincode, ...connectorDetails };
   });
 
   return { orders: enhancedOrders, storeProducts };
 };
 
+
+
 const CustomTooltip = ({ active, payload, total }) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     const percent = total > 0 ? ((data.value / total) * 100).toFixed(1) : 0;
-    
+
     return (
       <div style={{ backgroundColor: '#fff', border: `1px solid ${data.color || '#e5e7eb'}`, padding: '8px 12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', borderRadius: '4px' }}>
         <p style={{ margin: 0, fontSize: '13px', fontWeight: '600', color: '#111827' }}>{data.name}</p>
@@ -198,140 +205,107 @@ const CustomTooltip = ({ active, payload, total }) => {
   return null;
 };
 
+const CustomBarTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const dataMap = {};
+    payload.forEach(item => {
+      dataMap[item.dataKey] = {
+        value: item.value,
+        color: item.color || item.fill
+      };
+    });
+
+    const orderedKeys = [
+      { key: "Total Orders", label: "Total Orders", defaultColor: "#008f34ff" },
+      { key: "Unfulfilled", label: "Unfulfilled", defaultColor: "#ffd351ff" },
+      { key: "Fulfilled", label: "Fulfilled", defaultColor: "#319e9a" },
+      { key: "Delivered", label: "Delivered", defaultColor: "#31ff7dc3" },
+      { key: "In-Transit", label: "In-Transit", defaultColor: "#5052526a" },
+      { key: "Failed", label: "Failed", defaultColor: "#ef4444" }
+    ];
+
+    return (
+      <div style={{
+        backgroundColor: '#fff',
+        border: '1px solid #e5e7eb',
+        padding: '12px 14px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+        borderRadius: '8px',
+        fontSize: '13px',
+        fontFamily: 'inherit',
+        color: '#1f2937',
+        minWidth: '180px'
+      }}>
+        <p style={{ margin: '0 0 8px 0', fontWeight: '700', color: '#111827', fontSize: '14px', borderBottom: '1px solid #f3f4f6', paddingBottom: '4px' }}>
+          {label}
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {orderedKeys.map(item => {
+            const data = dataMap[item.key];
+            const value = data ? data.value : 0;
+            const color = data ? data.color : item.defaultColor;
+            return (
+              <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', color: '#4b5563' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color, display: 'inline-block' }} />
+                  {item.label}
+                </span>
+                <span style={{ fontWeight: '700', color: '#111827' }}>
+                  {value}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+const renderCustomLegend = (props) => {
+  const orderedLegend = [
+    { value: "Total Orders", color: "#15803d" },
+    { value: "Unfulfilled", color: "#ffd351ff" },
+    { value: "Fulfilled", color: "#319e9a" },
+    { value: "Delivered", color: "#31ff7da0" },
+    { value: "In-Transit", color: "#5052526a" },
+    { value: "Failed", color: "#ef4444" }
+  ];
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '20px', paddingTop: '24px', paddingBottom: '10px' }}>
+      {orderedLegend.map((item, index) => (
+        <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#4b5563', fontWeight: '500' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color, display: 'inline-block' }} />
+          <span>{item.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+
+
 export default function Index() {
   const { orders = [], storeProducts = [] } = useLoaderData() || {};
 
-  // Pie Chart Hover State
-  const [pieActiveIndex, setPieActiveIndex] = useState(null);
-  const onPieEnter = useCallback((_, index) => setPieActiveIndex(index), []);
-  const onPieLeave = useCallback(() => setPieActiveIndex(null), []);
 
-  // Date Picker State
-  const [datePopoverActive, setDatePopoverActive] = useState(false);
-  const toggleDatePopover = useCallback(() => setDatePopoverActive((active) => !active), []);
 
-  const [selectedDates, setSelectedDates] = useState({
-    start: new Date(new Date().setDate(new Date().getDate() - 30)),
-    end: new Date(),
+  const [selectedDates, setSelectedDates] = useState(() => {
+    const end = new Date();
+    end.setHours(0, 0, 0, 0);
+    const start = new Date(end);
+    start.setDate(end.getDate() - 29);
+    return { start, end };
   });
 
-  const [{ month, year }, setDate] = useState({
-    month: selectedDates.end.getMonth(),
-    year: selectedDates.end.getFullYear(),
-  });
-
-  const [presetFilter, setPresetFilter] = useState('last30');
-
-  const presetOptions = [
-    { label: 'Today', value: 'today' },
-    { label: 'Yesterday', value: 'yesterday' },
-    { label: 'Last 7 days', value: 'last7' },
-    { label: 'Last 30 days', value: 'last30' },
-    { label: 'Last 90 days', value: 'last90' },
-    { label: 'Last month', value: 'lastMonth' },
-    { label: 'Custom', value: 'custom' },
-  ];
-
-  const handlePresetChange = useCallback((value) => {
-    setPresetFilter(value);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    let start, end;
-    switch (value) {
-      case 'today':
-        start = today;
-        end = today;
-        break;
-      case 'yesterday':
-        start = new Date(today);
-        start.setDate(today.getDate() - 1);
-        end = new Date(today);
-        end.setDate(today.getDate() - 1);
-        break;
-      case 'last7':
-        start = new Date(today);
-        start.setDate(today.getDate() - 6);
-        end = today;
-        break;
-      case 'last30':
-        start = new Date(today);
-        start.setDate(today.getDate() - 29);
-        end = today;
-        break;
-      case 'last90':
-        start = new Date(today);
-        start.setDate(today.getDate() - 89);
-        end = today;
-        break;
-      case 'lastMonth':
-        start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        end = new Date(now.getFullYear(), now.getMonth(), 0);
-        break;
-      case 'custom':
-        return;
-      default:
-        return;
-    }
-
-    setSelectedDates({ start, end });
-    setDate({ month: end.getMonth(), year: end.getFullYear() });
-  }, []);
-
-  // Product Filter State
-  const [productPopoverActive, setProductPopoverActive] = useState(false);
-  const toggleProductPopover = useCallback(() => setProductPopoverActive((active) => !active), []);
   const [productFilter, setProductFilter] = useState("All Product Types");
-
-  // Delivery Status Filter State
-  const [deliveryStatusPopoverActive, setDeliveryStatusPopoverActive] = useState(false);
-  const toggleDeliveryStatusPopover = useCallback(() => setDeliveryStatusPopoverActive((active) => !active), []);
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState("All Statuses");
-
-  // State / City / Pincode Filter State
-  const [statePopoverActive, setStatePopoverActive] = useState(false);
-  const toggleStatePopover = useCallback(() => setStatePopoverActive((a) => !a), []);
   const [stateFilter, setStateFilter] = useState("All States");
-
-  const [cityPopoverActive, setCityPopoverActive] = useState(false);
-  const toggleCityPopover = useCallback(() => setCityPopoverActive((a) => !a), []);
   const [cityFilter, setCityFilter] = useState("All Cities");
-
-  const [pincodePopoverActive, setPincodePopoverActive] = useState(false);
-  const togglePincodePopover = useCallback(() => setPincodePopoverActive((a) => !a), []);
   const [pincodeFilter, setPincodeFilter] = useState("All Pincodes");
-
-  // Use store products directly (from loader) — only real catalog products appear here
-  const uniqueProducts = useMemo(() => storeProducts, [storeProducts]);
-
-  // Extract unique states, cities, pincodes from ALL orders (unfiltered)
-  const uniqueStates = useMemo(() => {
-    const vals = new Set();
-    orders.forEach(o => { if (o.shippingState) vals.add(o.shippingState); });
-    return Array.from(vals).sort();
-  }, [orders]);
-
-  const uniqueCities = useMemo(() => {
-    const vals = new Set();
-    orders.forEach(o => {
-      // Only show cities belonging to the selected state (or all if no state selected)
-      if (stateFilter === "All States" || o.shippingState === stateFilter) {
-        if (o.shippingCity) vals.add(o.shippingCity);
-      }
-    });
-    return Array.from(vals).sort();
-  }, [orders, stateFilter]);
-
-  const uniquePincodes = useMemo(() => {
-    const vals = new Set();
-    orders.forEach(o => {
-      // Only show pincodes for selected state + city combination
-      const stateMatch = stateFilter === "All States" || o.shippingState === stateFilter;
-      const cityMatch = cityFilter === "All Cities" || o.shippingCity === cityFilter;
-      if (stateMatch && cityMatch && o.shippingPincode) vals.add(o.shippingPincode);
-    });
-    return Array.from(vals).sort();
-  }, [orders, stateFilter, cityFilter]);
+  const [courierFilter, setCourierFilter] = useState("All Couriers");
 
   // Filter logic
   const filteredOrders = useMemo(() => {
@@ -363,9 +337,14 @@ export default function Index() {
         if (deliveryStatusFilter === "Delivered") {
           statusMatches = (order.orderDeliveryStatus === 'delivered' || order.orderDeliveryStatus === 'fulfilled');
         } else if (deliveryStatusFilter === "In-Transit") {
-          statusMatches = (order.orderDeliveryStatus === 'in_transit' || order.orderDeliveryStatus === 'out_for_delivery');
+          const isConnectorNoTracking = getIsConnectorNoTracking(order);
+          statusMatches = !isConnectorNoTracking && (order.orderDeliveryStatus === 'in_transit' || order.orderDeliveryStatus === 'out_for_delivery');
         } else if (deliveryStatusFilter === "Failed") {
           statusMatches = (order.orderDeliveryStatus === 'rto_failed');
+        } else if (deliveryStatusFilter.startsWith("Dispatched by ")) {
+          const connName = deliveryStatusFilter.replace("Dispatched by ", "");
+          const isConnectorNoTracking = getIsConnectorNoTracking(order, connName);
+          statusMatches = isConnectorNoTracking;
         }
         if (!statusMatches) return false;
       }
@@ -385,40 +364,51 @@ export default function Index() {
         if (order.shippingPincode !== pincodeFilter) return false;
       }
 
+      // 7. Courier Filter
+      if (courierFilter !== "All Couriers") {
+        const orderCourier = order.fulfillments?.[0]?.trackingInfo?.[0]?.company?.trim();
+        if (orderCourier !== courierFilter) return false;
+      }
+
       return true;
     });
-  }, [orders, selectedDates, productFilter, deliveryStatusFilter, stateFilter, cityFilter, pincodeFilter]);
+  }, [orders, selectedDates, productFilter, deliveryStatusFilter, stateFilter, cityFilter, pincodeFilter, courierFilter]);
 
   // Compute Metrics
+  // Each order falls into EXACTLY ONE bucket so all cards always sum to Total Orders:
+  //   Delivered | In-Transit | Failed | Dispatched-by-X (connector) | Unfulfilled (no tracking)
   const metrics = useMemo(() => {
-    let pending = 0;
-    let shipped = 0;
-    let fulfilled = 0;
-    let failed = 0;
-    let unfulfilled = 0;
+    let unfulfilled = 0; // orders with no delivery tracking and not a connector order
+    let shipped = 0;     // in_transit / out_for_delivery
+    let fulfilled = 0;   // delivered
+    let failed = 0;      // rto_failed
+    const connectorCounts = {};
 
     filteredOrders.forEach(order => {
-      const status = (order.displayFulfillmentStatus || '').toLowerCase();
-      if (status !== 'fulfilled') unfulfilled++;
+      // Connector order with no resolved delivery status → its own bucket
+      const isConnectorNoTracking = getIsConnectorNoTracking(order);
 
-      if (order.orderDeliveryStatus === 'delivered' || order.orderDeliveryStatus === 'fulfilled') {
+      if (isConnectorNoTracking) {
+        connectorCounts[order.connectorName] = (connectorCounts[order.connectorName] || 0) + 1;
+      } else if (order.orderDeliveryStatus === 'delivered' || order.orderDeliveryStatus === 'fulfilled') {
         fulfilled++;
       } else if (order.orderDeliveryStatus === 'in_transit' || order.orderDeliveryStatus === 'out_for_delivery') {
         shipped++;
       } else if (order.orderDeliveryStatus === 'rto_failed') {
         failed++;
       } else {
-        pending++; // If unknown or anything else, consider pending
+        // No tracking info at all — shown as "Unfulfilled"
+        unfulfilled++;
       }
     });
 
     return {
       totalOrders: filteredOrders.length,
-      pending,
       shipped,
       fulfilled,
       failed,
-      unfulfilled
+      unfulfilled,
+      connectorCounts
     };
   }, [filteredOrders]);
 
@@ -436,24 +426,47 @@ export default function Index() {
     const current = new Date(startObj);
     while (current <= endObj) {
       const dateStr = `${String(current.getDate()).padStart(2, '0')}/${String(current.getMonth() + 1).padStart(2, '0')}/${String(current.getFullYear()).slice(-2)}`;
-      dataMap[dateStr] = { date: dateStr, Total: 0, Pending: 0, Fulfilled: 0, Shipped: 0 };
+      dataMap[dateStr] = {
+        date: dateStr,
+        "Total Orders": 0,
+        "Unfulfilled": 0,
+        "Fulfilled": 0,
+        "Delivered": 0,
+        "In-Transit": 0,
+        "Failed": 0
+      };
       current.setDate(current.getDate() + 1);
     }
 
     // Populate data from orders
     filteredOrders.forEach(order => {
+      const isConnectorNoTracking = getIsConnectorNoTracking(order);
+      if (isConnectorNoTracking) {
+        return; // Exclude from charts/graphs
+      }
+
       const orderDate = new Date(order.createdAt);
       const dateStr = `${String(orderDate.getDate()).padStart(2, '0')}/${String(orderDate.getMonth() + 1).padStart(2, '0')}/${String(orderDate.getFullYear()).slice(-2)}`;
 
       if (dataMap[dateStr]) {
-        dataMap[dateStr].Total++;
+        dataMap[dateStr]["Total Orders"]++;
 
-        if (order.orderDeliveryStatus === 'delivered' || order.orderDeliveryStatus === 'fulfilled') {
-          dataMap[dateStr].Fulfilled++;
-        } else if (order.orderDeliveryStatus === 'in_transit' || order.orderDeliveryStatus === 'out_for_delivery') {
-          dataMap[dateStr].Shipped++;
+        // Fulfillment status checks
+        const status = (order.displayFulfillmentStatus || '').toLowerCase();
+        if (status === 'fulfilled') {
+          dataMap[dateStr]["Fulfilled"]++;
         } else {
-          dataMap[dateStr].Pending++;
+          dataMap[dateStr]["Unfulfilled"]++;
+        }
+
+        // Logistics delivery status checks
+        const deliveryStatus = order.orderDeliveryStatus;
+        if (deliveryStatus === 'delivered' || deliveryStatus === 'fulfilled') {
+          dataMap[dateStr]["Delivered"]++;
+        } else if (deliveryStatus === 'in_transit' || deliveryStatus === 'out_for_delivery') {
+          dataMap[dateStr]["In-Transit"]++;
+        } else if (deliveryStatus === 'rto_failed') {
+          dataMap[dateStr]["Failed"]++;
         }
       }
     });
@@ -468,6 +481,11 @@ export default function Index() {
     let inTransit = 0;
 
     filteredOrders.forEach(order => {
+      const isConnectorNoTracking = getIsConnectorNoTracking(order);
+      if (isConnectorNoTracking) {
+        return; // Exclude from charts/graphs
+      }
+
       const deliveryStatus = order.orderDeliveryStatus;
 
       if (deliveryStatus === 'delivered' || deliveryStatus === 'fulfilled') {
@@ -480,90 +498,137 @@ export default function Index() {
     });
 
     return [
-      { name: 'Delivered',  value: delivered, color: '#059669' },
-      { name: 'RTO',        value: rto,       color: '#ef4444' },
+      { name: 'Delivered', value: delivered, color: '#059669' },
+      { name: 'RTO', value: rto, color: '#ef4444' },
       { name: 'In-Transit', value: inTransit, color: '#00a896' },
     ].filter(d => d.value > 0);
   }, [filteredOrders]);
 
-  const handleDateSelection = useCallback(
-    (value) => {
-      setSelectedDates(value);
-      setPresetFilter('custom');
-    },
-    [],
-  );
+  // Memoized pie total — stable reference prevents Tooltip from remounting on every hover
+  const pieTotal = useMemo(() => trackingStatusData.reduce((sum, item) => sum + item.value, 0), [trackingStatusData]);
 
-  const formatDateForComparison = (start, end) => {
-    const startStr = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    const endStr = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    return `${startStr} - ${endStr}`;
-  };
+  // ── RTO Analysis (date + product filters already applied via filteredOrders) ──
+  const rtoAnalysis = useMemo(() => {
+    const groupBy = (keyFn) => {
+      const map = {};
+      filteredOrders.forEach(order => {
+        const isConnectorNoTracking = getIsConnectorNoTracking(order);
+        if (isConnectorNoTracking) {
+          return; // Exclude from charts/graphs
+        }
 
-  const formatDateForInput = (date) => {
-    return `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
-  };
+        const key = keyFn(order);
+        if (!key) return;
+        if (!map[key]) map[key] = { delivered: 0, rto: 0, inTransit: 0, total: 0 };
+        map[key].total++;
+        if (order.orderDeliveryStatus === 'rto_failed') {
+          map[key].rto++;
+        } else if (order.orderDeliveryStatus === 'delivered' || order.orderDeliveryStatus === 'fulfilled') {
+          map[key].delivered++;
+        } else if (order.orderDeliveryStatus === 'in_transit' || order.orderDeliveryStatus === 'out_for_delivery') {
+          map[key].inTransit++;
+        }
+      });
+      return Object.entries(map)
+        .map(([name, d]) => ({
+          name,
+          delivered: d.delivered,
+          rto: d.rto,
+          inTransit: d.inTransit,
+          total: d.total,
+          rtoPct: d.total > 0 ? +((d.rto / d.total) * 100).toFixed(1) : 0,
+        }))
+        .sort((a, b) => b.rtoPct - a.rtoPct || b.rto - a.rto);
+    };
 
-  const dateButton = (
-    <Button onClick={toggleDatePopover} icon={CalendarIcon}>
-      {presetOptions.find(o => o.value === presetFilter)?.label || 'Custom'}
-    </Button>
-  );
+    // ── Product groupBy (filtered to active store products only) ──
+    const activeProductSet = new Set(storeProducts); // storeProducts = active catalog titles from loader
+    const productMap = {};
+    filteredOrders.forEach(order => {
+      const isConnectorNoTracking = getIsConnectorNoTracking(order);
+      if (isConnectorNoTracking) return;
+      (order.lineItems?.edges || []).forEach(e => {
+        const productTitle = e.node?.title;
+        if (!productTitle || !activeProductSet.has(productTitle)) return;
+        const qty = e.node.quantity || 1;
 
-  const productActivator = (
-    <Button onClick={toggleProductPopover} icon={FilterIcon}>
-      {productFilter}
-    </Button>
-  );
+        if (!productMap[productTitle]) {
+          productMap[productTitle] = { delivered: 0, rto: 0, inTransit: 0, total: 0 };
+        }
+        productMap[productTitle].total += qty;
+        if (order.orderDeliveryStatus === 'rto_failed') {
+          productMap[productTitle].rto += qty;
+        } else if (order.orderDeliveryStatus === 'delivered' || order.orderDeliveryStatus === 'fulfilled') {
+          productMap[productTitle].delivered += qty;
+        } else if (order.orderDeliveryStatus === 'in_transit' || order.orderDeliveryStatus === 'out_for_delivery') {
+          productMap[productTitle].inTransit += qty;
+        }
+      });
+    });
+    const products = Object.entries(productMap)
+      .map(([name, d]) => ({
+        name,
+        delivered: d.delivered,
+        rto: d.rto,
+        inTransit: d.inTransit,
+        total: d.total,
+        rtoPct: d.total > 0 ? +((d.rto / d.total) * 100).toFixed(1) : 0,
+      }))
+      .sort((a, b) => b.total - a.total);
 
-  const productOptions = [
-    { content: "All Product Types", onAction: () => { setProductFilter("All Product Types"); toggleProductPopover(); } },
-    ...uniqueProducts.map(fp => ({
-      content: fp,
-      onAction: () => { setProductFilter(fp); toggleProductPopover(); }
-    }))
-  ];
+    // ── Product Revenue Aggregation ──
+    const productRevenueMap = {};
+    filteredOrders.forEach(order => {
+      const isConnector = !!order.connectorName;
+      if (isConnector) return;
 
-  const deliveryStatusActivator = (
-    <Button onClick={toggleDeliveryStatusPopover} icon={FilterIcon}>
-      {deliveryStatusFilter}
-    </Button>
-  );
+      (order.lineItems?.edges || []).forEach(e => {
+        const productTitle = e.node?.title;
+        if (!productTitle || !activeProductSet.has(productTitle)) return;
+        const qty = e.node.quantity || 1;
+        const unitPrice = Number(e.node.originalUnitPriceSet?.shopMoney?.amount || 0);
+        const itemRevenue = qty * unitPrice;
 
-  const deliveryStatusOptions = [
-    { content: "All Statuses", onAction: () => { setDeliveryStatusFilter("All Statuses"); toggleDeliveryStatusPopover(); } },
-    { content: "In-Transit", onAction: () => { setDeliveryStatusFilter("In-Transit"); toggleDeliveryStatusPopover(); } },
-    { content: "Delivered", onAction: () => { setDeliveryStatusFilter("Delivered"); toggleDeliveryStatusPopover(); } },
-    { content: "Failed", onAction: () => { setDeliveryStatusFilter("Failed"); toggleDeliveryStatusPopover(); } }
-  ];
+        if (!productRevenueMap[productTitle]) {
+          productRevenueMap[productTitle] = {
+            name: productTitle,
+            expected: 0,
+            delivered: 0,
+            inTransit: 0,
+            unfulfilled: 0,
+            lost: 0
+          };
+        }
 
-  // State / City / Pincode action lists
-  const stateOptions = [
-    { content: "All States", onAction: () => { setStateFilter("All States"); setCityFilter("All Cities"); setPincodeFilter("All Pincodes"); toggleStatePopover(); } },
-    ...uniqueStates.map(s => ({
-      content: s,
-      onAction: () => { setStateFilter(s); setCityFilter("All Cities"); setPincodeFilter("All Pincodes"); toggleStatePopover(); }
-    }))
-  ];
+        productRevenueMap[productTitle].expected += itemRevenue;
 
-  const cityOptions = [
-    { content: "All Cities", onAction: () => { setCityFilter("All Cities"); setPincodeFilter("All Pincodes"); toggleCityPopover(); } },
-    ...uniqueCities.map(c => ({
-      content: c,
-      onAction: () => { setCityFilter(c); setPincodeFilter("All Pincodes"); toggleCityPopover(); }
-    }))
-  ];
+        if (order.orderDeliveryStatus === 'delivered' || order.orderDeliveryStatus === 'fulfilled') {
+          productRevenueMap[productTitle].delivered += itemRevenue;
+        } else if (order.orderDeliveryStatus === 'in_transit' || order.orderDeliveryStatus === 'out_for_delivery') {
+          productRevenueMap[productTitle].inTransit += itemRevenue;
+        } else if (order.orderDeliveryStatus === 'rto_failed') {
+          productRevenueMap[productTitle].lost += itemRevenue;
+        } else {
+          productRevenueMap[productTitle].unfulfilled += itemRevenue;
+        }
+      });
+    });
+    const productRevenues = Object.values(productRevenueMap).sort((a, b) => b.expected - a.expected);
 
-  const pincodeOptions = [
-    { content: "All Pincodes", onAction: () => { setPincodeFilter("All Pincodes"); togglePincodePopover(); } },
-    ...uniquePincodes.map(p => ({
-      content: p,
-      onAction: () => { setPincodeFilter(p); togglePincodePopover(); }
-    }))
-  ];
+    return {
+      states: groupBy(o => o.shippingState || null),
+      cities: groupBy(o => o.shippingCity || null),
+      pincodes: groupBy(o => o.shippingPincode || null),
+      couriers: groupBy(o => o.fulfillments?.[0]?.trackingInfo?.[0]?.company || null),
+      products,
+      productRevenues,
+    };
+  }, [filteredOrders, storeProducts]);
+
+
 
   const styles = {
-    grid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "16px", marginTop: "32px", marginBottom: "32px" },
+    grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginTop: "32px", marginBottom: "32px" },
     card: {
       backgroundColor: "#ffffff", padding: "20px 24px", borderRadius: "8px",
       boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
@@ -587,164 +652,226 @@ export default function Index() {
     empty: { textAlign: "center", padding: "40px", color: "#888", fontStyle: "italic" }
   };
 
+  const orderCardStyles = {
+    grid: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+      gap: "16px",
+      marginTop: "32px",
+      marginBottom: "32px",
+    },
+    card: {
+      backgroundColor: "#ffffff",
+      padding: "20px 24px",
+      borderRadius: "8px",
+      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
+      border: "1px solid #e5e7eb",
+      display: "flex",
+      flexDirection: "column",
+      position: "relative",
+      overflow: "hidden",
+      cursor: "default",
+    },
+    cardHeader: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: "16px",
+    },
+    cardTitle: {
+      fontSize: "14px",
+      fontWeight: "500",
+      color: "#4b5563",
+      margin: 0,
+    },
+    iconContainer: {
+      width: "36px",
+      height: "36px",
+      borderRadius: "8px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    cardValue: {
+      fontSize: "26px",
+      fontWeight: "700",
+      margin: 0,
+      lineHeight: 1.2,
+      fontFamily: "inherit",
+    },
+  };
+
+  const baseOrderCards = [
+    {
+      title: "Total Orders",
+      value: metrics.totalOrders,
+      color: "#4f46e5",
+      borderColor: "#4f46e5",
+      bgLight: "#f5f3ff",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <path d="M16 10a4 4 0 0 1-8 0"></path>
+        </svg>
+      )
+    },
+    {
+      title: "Delivered",
+      value: metrics.fulfilled,
+      color: "#10b981",
+      borderColor: "#10b981",
+      bgLight: "#ecfdf5",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+          <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
+      )
+    },
+    {
+      title: "In-Transit",
+      value: metrics.shipped,
+      color: "#3b82f6",
+      borderColor: "#3b82f6",
+      bgLight: "#eff6ff",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="1" y="3" width="15" height="13"></rect>
+          <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+          <circle cx="5.5" cy="18.5" r="2.5"></circle>
+          <circle cx="18.5" cy="18.5" r="2.5"></circle>
+        </svg>
+      )
+    },
+    {
+      title: "Unfulfilled",
+      value: metrics.unfulfilled,
+      color: "#f59e0b",
+      borderColor: "#f59e0b",
+      bgLight: "#fffbeb",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+      )
+    },
+    {
+      title: "Failed",
+      value: metrics.failed,
+      color: "#ef4444",
+      borderColor: "#ef4444",
+      bgLight: "#fef2f2",
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="15" y1="9" x2="9" y2="15"></line>
+          <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+      )
+    }
+  ];
+
   return (
     <AppProvider i18n={enTranslations}>
       <div style={{ padding: "2rem" }}>
         <Page title="Dashboard" fullWidth>
           <BlockStack gap="400">
-            <InlineStack gap="400" blockAlign="center">
-              {/* Date Picker Popover */}
-              <Popover
-                active={datePopoverActive}
-                activator={dateButton}
-                autofocusTarget="none"
-                onClose={toggleDatePopover}
-                fluidContent
-              >
-                <Box padding="400" width="650px">
-                  <BlockStack gap="400">
-                    <div style={{ marginBottom: "4px" }}>
-                      <Select
-                        options={presetOptions}
-                        value={presetFilter}
-                        onChange={handlePresetChange}
-                        label="Date range"
-                      />
+            <Filters
+              orders={orders}
+              storeProducts={storeProducts}
+              selectedDates={selectedDates}
+              setSelectedDates={setSelectedDates}
+              productFilter={productFilter}
+              setProductFilter={setProductFilter}
+              deliveryStatusFilter={deliveryStatusFilter}
+              setDeliveryStatusFilter={setDeliveryStatusFilter}
+              stateFilter={stateFilter}
+              setStateFilter={setStateFilter}
+              cityFilter={cityFilter}
+              setCityFilter={setCityFilter}
+              pincodeFilter={pincodeFilter}
+              setPincodeFilter={setPincodeFilter}
+              courierFilter={courierFilter}
+              setCourierFilter={setCourierFilter}
+            />
+
+            <style>{`
+              .order-card {
+                transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s ease;
+              }
+              .order-card:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+                border-color: #cbd5e1 !important;
+              }
+            `}</style>
+
+            <div style={orderCardStyles.grid}>
+              {baseOrderCards.map((card, idx) => (
+                <div
+                  key={idx}
+                  className="order-card"
+                  style={{
+                    ...orderCardStyles.card,
+                    borderTop: `4px solid ${card.borderColor}`
+                  }}
+                >
+                  <div style={orderCardStyles.cardHeader}>
+                    <h3 style={orderCardStyles.cardTitle}>{card.title}</h3>
+                    <div
+                      style={{
+                        ...orderCardStyles.iconContainer,
+                        backgroundColor: card.bgLight,
+                        color: card.color
+                      }}
+                    >
+                      {card.icon}
                     </div>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px', fontWeight: '500', color: '#1a1a1a', marginBottom: '6px' }}>Starting</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #c9cccf', borderRadius: '8px', padding: '8px 12px', background: '#fff' }}>
-                          <svg width="14" height="14" viewBox="0 0 20 20" fill="#5c5f62"><path d="M7 2a1 1 0 0 0-1 1v1H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V3a1 1 0 0 0-2 0v1H8V3a1 1 0 0 0-1-1ZM4 8h12v9H4V8Z" /></svg>
-                          <span style={{ fontSize: '14px', color: '#1a1a1a' }}>{formatDateForInput(selectedDates.start)}</span>
-                        </div>
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px', fontWeight: '500', color: '#1a1a1a', marginBottom: '6px' }}>Ending</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #c9cccf', borderRadius: '8px', padding: '8px 12px', background: '#fff' }}>
-                          <svg width="14" height="14" viewBox="0 0 20 20" fill="#5c5f62"><path d="M7 2a1 1 0 0 0-1 1v1H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V3a1 1 0 0 0-2 0v1H8V3a1 1 0 0 0-1-1ZM4 8h12v9H4V8Z" /></svg>
-                          <span style={{ fontSize: '14px', color: '#1a1a1a' }}>{formatDateForInput(selectedDates.end)}</span>
-                        </div>
-                      </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '4px', marginBottom: '8px' }}>
+                    <p style={{ ...orderCardStyles.cardValue, color: card.color }}>
+                      {card.value}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              {Object.entries(metrics.connectorCounts).map(([connectorName, count]) => (
+                <div
+                  key={connectorName}
+                  className="order-card"
+                  style={{
+                    ...orderCardStyles.card,
+                    borderTop: `4px solid #8b5cf6`
+                  }}
+                >
+                  <div style={orderCardStyles.cardHeader}>
+                    <h3 style={orderCardStyles.cardTitle}>Dispatched by {connectorName}</h3>
+                    <div
+                      style={{
+                        ...orderCardStyles.iconContainer,
+                        backgroundColor: "#f5f3ff",
+                        color: "#8b5cf6"
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                      </svg>
                     </div>
-                    <DatePicker
-                      month={month}
-                      year={year}
-                      onChange={handleDateSelection}
-                      onMonthChange={(month, year) => setDate({ month, year })}
-                      selected={selectedDates}
-                      multiMonth
-                      allowRange
-                    />
-                    <Divider />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px' }}>
-                      <Button onClick={toggleDatePopover}>Cancel</Button>
-                      <Button onClick={toggleDatePopover} variant="primary" tone="success">Apply</Button>
-                    </div>
-                  </BlockStack>
-                </Box>
-              </Popover>
-
-              <Text as="span" tone="subdued">Compared to {formatDateForComparison(selectedDates.start, selectedDates.end)}</Text>
-
-              <Popover
-                active={productPopoverActive}
-                activator={productActivator}
-                onClose={toggleProductPopover}
-              >
-                <div style={{ minWidth: "200px" }}>
-                  <ActionList items={productOptions} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '4px', marginBottom: '8px' }}>
+                    <p style={{ ...orderCardStyles.cardValue, color: "#8b5cf6" }}>
+                      {count}
+                    </p>
+                  </div>
                 </div>
-              </Popover>
-
-              <Popover
-                active={deliveryStatusPopoverActive}
-                activator={deliveryStatusActivator}
-                onClose={toggleDeliveryStatusPopover}
-              >
-                <div style={{ minWidth: "150px" }}>
-                  <ActionList items={deliveryStatusOptions} />
-                </div>
-              </Popover>
-
-              {/* State Filter */}
-              <Popover
-                active={statePopoverActive}
-                activator={
-                  <Button onClick={toggleStatePopover} icon={FilterIcon}>
-                    {stateFilter}
-                  </Button>
-                }
-                onClose={toggleStatePopover}
-              >
-                <div style={{ minWidth: "180px", maxHeight: "260px", overflowY: "auto" }}>
-                  <ActionList items={stateOptions} />
-                </div>
-              </Popover>
-
-              {/* City Filter */}
-              <Popover
-                active={cityPopoverActive}
-                activator={
-                  <Button onClick={toggleCityPopover} icon={FilterIcon}>
-                    {cityFilter}
-                  </Button>
-                }
-                onClose={toggleCityPopover}
-              >
-                <div style={{ minWidth: "180px", maxHeight: "260px", overflowY: "auto" }}>
-                  <ActionList items={cityOptions} />
-                </div>
-              </Popover>
-
-              {/* Pincode Filter */}
-              <Popover
-                active={pincodePopoverActive}
-                activator={
-                  <Button onClick={togglePincodePopover} icon={FilterIcon}>
-                    {pincodeFilter}
-                  </Button>
-                }
-                onClose={togglePincodePopover}
-              >
-                <div style={{ minWidth: "160px", maxHeight: "260px", overflowY: "auto" }}>
-                  <ActionList items={pincodeOptions} />
-                </div>
-              </Popover>
-            </InlineStack>
-
-            <div style={styles.grid}>
-              <div style={styles.card}>
-                <div style={styles.cardTitleOuter}>
-                  <h3 style={styles.cardTitle}>Total Orders</h3>
-                </div>
-                <p style={styles.cardValue}>{metrics.totalOrders}</p>
-              </div>
-              <div style={styles.card}>
-                <div style={styles.cardTitleOuter}>
-                  <h3 style={styles.cardTitle}>In-Transit</h3>
-                </div>
-                <p style={styles.cardValue}>{metrics.shipped}</p>
-              </div>
-              <div style={styles.card}>
-                <div style={styles.cardTitleOuter}>
-                  <h3 style={styles.cardTitle}>Delivered</h3>
-                </div>
-                <p style={styles.cardValue}>{metrics.fulfilled}</p>
-              </div>
-              <div style={styles.card}>
-                <div style={styles.cardTitleOuter}>
-                  <h3 style={styles.cardTitle}>Failed</h3>
-                </div>
-                <p style={styles.cardValue}>{metrics.failed}</p>
-              </div>
-              <div style={styles.card}>
-                <div style={styles.cardTitleOuter}>
-                  <h3 style={styles.cardTitle}>Unfulfilled</h3>
-                </div>
-                <p style={styles.cardValue}>{metrics.unfulfilled}</p>
-              </div>
+              ))}
             </div>
+
+            <RevenueCards orders={filteredOrders} productFilter={productFilter} productRevenues={rtoAnalysis.productRevenues} />
 
             <div style={styles.section}>
               <div style={styles.cardTitleOuter}>
@@ -775,57 +902,107 @@ export default function Index() {
                     />
                     <Tooltip
                       cursor={{ fill: 'rgba(0,0,0,0.05)' }}
-                      contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}
+                      content={<CustomBarTooltip />}
                     />
                     <Legend
-                      iconType="circle"
-                      wrapperStyle={{ paddingTop: '30px', paddingBottom: '10px' }}
+                      content={renderCustomLegend}
                     />
-                    <Bar dataKey="Total" fill="#00a896" barSize={6} />
-                    <Bar dataKey="Pending" fill="#9ca3af" barSize={6} />
-                    <Bar dataKey="Fulfilled" fill="#059669" barSize={6} />
-                    <Bar dataKey="Shipped" fill="#8ed4ce" barSize={6} />
+                    <Bar dataKey="Total Orders" stackId="total" fill="#15803d" barSize={6} />
+                    <Bar dataKey="Unfulfilled" stackId="unfulfilled" fill="#ffd351ff" barSize={6} />
+                    <Bar dataKey="Fulfilled" stackId="fulfilled" fill="#319e9a" barSize={6} />
+                    <Bar dataKey="Delivered" stackId="logistics" fill="#31ff7da7" barSize={6} />
+                    <Bar dataKey="In-Transit" stackId="logistics" fill="#5052526a" barSize={6} />
+                    <Bar dataKey="Failed" stackId="logistics" fill="#ef4444" barSize={6} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
             <div style={styles.section}>
-              <div style={styles.cardTitleOuter}>
-                <h3 style={styles.cardTitle}>Tracking-Status History</h3>
-              </div>
-              <div style={{ width: '100%', height: 400, marginTop: '20px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart onMouseLeave={onPieLeave}>
-                    <Pie
-                      data={trackingStatusData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={140}
-                      labelLine={{ stroke: '#9ca3af', strokeWidth: 1 }}
-                      label={({ name, value, x, y, textAnchor }) => (
-                        <text x={x} y={y} fill="#111827" fontSize="13" fontWeight="600" textAnchor={textAnchor} dominantBaseline="central">
-                          {name} : {value}
-                        </text>
-                      )}
-                      onMouseEnter={onPieEnter}
-                    >
-                      {trackingStatusData.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={entry.color} 
-                          opacity={pieActiveIndex === null || pieActiveIndex === index ? 1 : 0.3}
-                          style={{ transition: 'opacity 0.2s ease-in-out' }}
+              <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
+
+                {/* ── Left: Shopify Tracking-Status History ── */}
+                <div style={{ flex: '1 1 380px', minWidth: '320px' }}>
+                  <div style={styles.cardTitleOuter}>
+                    <h3 style={styles.cardTitle}>Tracking-Status History</h3>
+                  </div>
+                  <div style={{ width: '100%', height: 380, marginTop: '12px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={trackingStatusData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={120}
+                          isAnimationActive={false}
+                          labelLine={{ stroke: '#9ca3af', strokeWidth: 1 }}
+                          label={({ name, value, x, y, textAnchor }) => (
+                            <text x={x} y={y} fill="#111827" fontSize="13" fontWeight="600" textAnchor={textAnchor} dominantBaseline="central">
+                              {name} : {value}
+                            </text>
+                          )}
+                        >
+                          {trackingStatusData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          content={<CustomTooltip total={pieTotal} />}
+                          wrapperStyle={{ outline: 'none' }}
                         />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<CustomTooltip total={trackingStatusData.reduce((sum, item) => sum + item.value, 0)} />} />
-                  </PieChart>
-                </ResponsiveContainer>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* ── Divider ── */}
+                <div style={{ width: '1px', backgroundColor: '#e5e7eb', flexShrink: 0 }} />
+
+                {/* ── Right: Connector Orders – Delivery Status ── */}
+                <div style={{ flex: '1 1 380px', minWidth: '320px' }}>
+                  <div style={styles.cardTitleOuter}>
+                    <h3 style={styles.cardTitle}>Connector Orders – Delivery Status</h3>
+                  </div>
+                  <div style={{ marginBottom: '6px', fontSize: '11px', color: '#9ca3af' }}>
+                    Based on Latest Delivery Date from order details (Amazon / other platform)
+                  </div>
+                  <ConnectorStatusCard orders={filteredOrders} />
+                </div>
+
               </div>
             </div>
+
+            {/* ── Product RTO Card ── */}
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827', marginBottom: '16px', letterSpacing: '-0.3px' }}>Product RTO</div>
+              <ProductRTO data={rtoAnalysis.products} />
+            </div>
+
+            {/* ── Product Revenue Card ── */}
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827', marginBottom: '16px', letterSpacing: '-0.3px' }}>Product Revenue</div>
+              <ProductRevenue data={rtoAnalysis.productRevenues} />
+            </div>
+
+            {/* ── RTO Analysis Cards ── */}
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827', marginBottom: '20px', letterSpacing: '-0.3px' }}>RTO Analysis</div>
+
+
+              {/* 2-column grid — align-items:start keeps cards independent heights */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', alignItems: 'start' }}>
+                <RTOAnalysis title="🏙️ Top RTO States" label="State" data={rtoAnalysis.states} />
+                <RTOAnalysis title="🌆 Top RTO Cities" label="City" data={rtoAnalysis.cities} />
+                <RTOAnalysis title="📮 Top RTO Pincodes" label="Pincode" data={rtoAnalysis.pincodes} />
+                <RTOAnalysis title="🚚 Top RTO Couriers" label="Courier" data={rtoAnalysis.couriers} showInTransit />
+              </div>
+            </div>
+
+            {/* ── India Heat Map ── */}
+            <IndiaHeatMap statesData={rtoAnalysis.states} />
+
           </BlockStack>
         </Page>
       </div>
