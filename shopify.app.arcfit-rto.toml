@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "cab666d1738ee9619635b7f25aa5d0f7"
+client_id = "1c48f33a8c557966d7bd8e7c77f9e231"
 name = "arcfit rto"
 application_url = "https://insightful-kindness-production.up.railway.app"
 embedded = true
