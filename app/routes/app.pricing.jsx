@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import "./app.pricing.css";
+import "../styles/app.pricing.css";
 
 export default function PricingPage() {
   // Billing cycle state
