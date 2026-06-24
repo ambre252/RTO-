@@ -9,22 +9,55 @@ export default function PricingPage() {
   const [activeFaq, setActiveFaq] = useState(null);
 
   // Calculator inputs state
-  const [monthlyOrders, setMonthlyOrders] = useState(500);
+  const [monthlyOrders, setMonthlyOrders] = useState(750); // Default to Growth tier
   const [aov, setAov] = useState(1200);
   const [codShare, setCodShare] = useState(60);
+
+  // Gating Logic: Determine active highlighted plan based on slider
+  const activeTier = useMemo(() => {
+    if (monthlyOrders <= 500) return "starter";
+    if (monthlyOrders <= 1000) return "growth";
+    if (monthlyOrders <= 2000) return "pro";
+    return "plus";
+  }, [monthlyOrders]);
+
+  // Plus Plan Dynamic Price Calculation
+  const plusPricing = useMemo(() => {
+    let rate = 2.50; // default rate per order for 2000-5000
+    if (monthlyOrders >= 5000) {
+      rate = 2.00;   // discounted rate for 5000-10000
+    }
+    if (monthlyOrders >= 10000) {
+      rate = 1.50;   // enterprise rate for 10000+
+    }
+
+    const basePrice = monthlyOrders * rate;
+    // Billed annually discount of 20%
+    const monthlyFee = isAnnual ? Math.round(basePrice * 0.8) : Math.round(basePrice);
+    const displayRate = isAnnual ? (rate * 0.8).toFixed(2) : rate.toFixed(2);
+
+    return {
+      fee: monthlyFee,
+      rate: displayRate,
+      isDynamic: monthlyOrders > 2000
+    };
+  }, [monthlyOrders, isAnnual]);
 
   // Calculator math
   const calculatorSavings = useMemo(() => {
     const codOrders = monthlyOrders * (codShare / 100);
     
-    // In India, standard COD RTO is ~20% without verification
+    // In India, standard RTO is ~20% without verification
     const standardRtoRate = 0.20;
     const standardRtoOrders = codOrders * standardRtoRate;
     
-    // With our system, RTO drops to ~8%
-    const optimizedRtoRate = 0.08;
+    // With our system, RTO drops based on tier effectiveness
+    let optimizedRtoRate = 0.12; // Starter tier
+    if (activeTier === "growth") optimizedRtoRate = 0.09;
+    if (activeTier === "pro") optimizedRtoRate = 0.07;
+    if (activeTier === "plus") optimizedRtoRate = 0.05;
+
     const optimizedRtoOrders = codOrders * optimizedRtoRate;
-    
     const ordersSaved = Math.round(standardRtoOrders - optimizedRtoOrders);
     
     // Average Cost of RTO per order:
@@ -42,7 +75,7 @@ export default function PricingPage() {
       yearlySavings,
       rtoCostPerOrder: Math.round(rtoCostPerOrder)
     };
-  }, [monthlyOrders, aov, codShare]);
+  }, [monthlyOrders, aov, codShare, activeTier]);
 
   const handlePlanSelect = (planName) => {
     const message = `Initiated checkout flow for the ${planName} Plan (${isAnnual ? "Annual" : "Monthly"}).`;
@@ -84,7 +117,7 @@ export default function PricingPage() {
         <div className="pricing-header">
           <h1>Pricing & Plans</h1>
           <p>
-            Choose the perfect plan to streamline your shipping, automate COD verifications, and reduce Return-to-Origin (RTO) overhead.
+            Choose the plan that matches your monthly order volume. Restructured to scale seamlessly as your e-commerce operations grow.
           </p>
           
           <div className="billing-toggle-wrapper">
@@ -107,13 +140,14 @@ export default function PricingPage() {
         {/* Pricing Cards */}
         <div className="plans-grid">
           
-          {/* Lite Plan */}
-          <div className="plan-card">
-            <h3 className="plan-type">Lite</h3>
-            <p className="plan-desc">For starters testing the waters. Pay-as-you-go logistics features.</p>
+          {/* Starter Plan */}
+          <div className={`plan-card ${activeTier === "starter" ? "active-highlight" : ""}`}>
+            {activeTier === "starter" && <span className="recommended-badge">Active Selection</span>}
+            <h3 className="plan-type">Starter</h3>
+            <p className="plan-desc">For small brands with <strong>0 - 500</strong> monthly orders. Pay-as-you-go logistics.</p>
             <div className="plan-price-wrapper">
               <span className="plan-currency">₹</span>
-              <span className="plan-price">0</span>
+              <span className="plan-price">{isAnnual ? "799" : "999"}</span>
               <span className="plan-billing-period">/month</span>
             </div>
             <ul className="plan-features-list">
@@ -138,8 +172,8 @@ export default function PricingPage() {
                 <span className="plan-feature-text">Basic RTO risk flags</span>
               </li>
               <li className="plan-feature-item">
-                {crossIcon}
-                <span className="plan-feature-text disabled">WhatsApp COD order confirmations</span>
+                {checkIcon}
+                <span className="plan-feature-text">WhatsApp COD confirmation (Standard)</span>
               </li>
               <li className="plan-feature-item">
                 {crossIcon}
@@ -150,19 +184,19 @@ export default function PricingPage() {
                 <span className="plan-feature-text disabled">White-labeled customer tracking page</span>
               </li>
             </ul>
-            <button className="plan-btn" onClick={() => handlePlanSelect("Lite")}>
-              Get Started
+            <button className="plan-btn" onClick={() => handlePlanSelect("Starter")}>
+              Choose Starter
             </button>
           </div>
 
           {/* Growth Plan */}
-          <div className="plan-card recommended">
-            <span className="recommended-badge">Most Popular</span>
+          <div className={`plan-card ${activeTier === "growth" ? "active-highlight" : ""}`}>
+            {activeTier === "growth" && <span className="recommended-badge">Active Selection</span>}
             <h3 className="plan-type">Growth</h3>
-            <p className="plan-desc">For growing stores looking to automate COD verifications and minimize RTO fees.</p>
+            <p className="plan-desc">For growing stores with <strong>500 - 1,000</strong> monthly orders. Adds premium couriers.</p>
             <div className="plan-price-wrapper">
               <span className="plan-currency">₹</span>
-              <span className="plan-price">{isAnnual ? "1,199" : "1,499"}</span>
+              <span className="plan-price">{isAnnual ? "1,599" : "1,999"}</span>
               <span className="plan-billing-period">/month</span>
             </div>
             <ul className="plan-features-list">
@@ -188,7 +222,7 @@ export default function PricingPage() {
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text"><strong>Automated WhatsApp COD confirm</strong></span>
+                <span className="plan-feature-text">WhatsApp COD confirmation (Standard)</span>
               </li>
               <li className="plan-feature-item">
                 {crossIcon}
@@ -200,18 +234,73 @@ export default function PricingPage() {
               </li>
             </ul>
             <button className="plan-btn" onClick={() => handlePlanSelect("Growth")}>
-              Upgrade to Growth
+              Choose Growth
             </button>
           </div>
 
-          {/* VIP Plan */}
-          <div className="plan-card">
-            <h3 className="plan-type">VIP</h3>
-            <p className="plan-desc">For high-volume brands demanding ultimate RTO protection and shipping discounts.</p>
+          {/* Pro Plan */}
+          <div className={`plan-card ${activeTier === "pro" ? "active-highlight" : ""}`}>
+            {activeTier === "pro" && <span className="recommended-badge">Active Selection</span>}
+            <h3 className="plan-type">Pro</h3>
+            <p className="plan-desc">For high-volume stores with <strong>1,000 - 2,000</strong> monthly orders. IVR & next-day payouts.</p>
             <div className="plan-price-wrapper">
               <span className="plan-currency">₹</span>
-              <span className="plan-price">{isAnnual ? "3,999" : "4,999"}</span>
+              <span className="plan-price">{isAnnual ? "3,199" : "3,999"}</span>
               <span className="plan-billing-period">/month</span>
+            </div>
+            <ul className="plan-features-list">
+              <li className="plan-feature-item">
+                {checkIcon}
+                <span className="plan-feature-text">All couriers + Express Air service</span>
+              </li>
+              <li className="plan-feature-item">
+                {checkIcon}
+                <span className="plan-feature-text">Lowest shipping rates (Up to 15% off)</span>
+              </li>
+              <li className="plan-feature-item">
+                {checkIcon}
+                <span className="plan-feature-text"><strong>Next-day COD remittance (24h)</strong></span>
+              </li>
+              <li className="plan-feature-item">
+                {checkIcon}
+                <span className="plan-feature-text">1-Click weight dispute manager</span>
+              </li>
+              <li className="plan-feature-item">
+                {checkIcon}
+                <span className="plan-feature-text">Custom predictive AI models for RTO</span>
+              </li>
+              <li className="plan-feature-item">
+                {checkIcon}
+                <span className="plan-feature-text">WhatsApp confirmation + address correction</span>
+              </li>
+              <li className="plan-feature-item">
+                {checkIcon}
+                <span className="plan-feature-text"><strong>Automated IVR verification calls</strong></span>
+              </li>
+              <li className="plan-feature-item">
+                {checkIcon}
+                <span className="plan-feature-text">Standard branded customer tracking page</span>
+              </li>
+            </ul>
+            <button className="plan-btn" onClick={() => handlePlanSelect("Pro")}>
+              Choose Pro
+            </button>
+          </div>
+
+          {/* Plus Plan (Dynamic 2000+) */}
+          <div className={`plan-card ${activeTier === "plus" ? "active-highlight plus-dynamic-card" : ""}`}>
+            {activeTier === "plus" && <span className="recommended-badge">Active Selection</span>}
+            <h3 className="plan-type">Plus</h3>
+            <p className="plan-desc">For enterprise brands with <strong>2,000+</strong> orders. Dynamically calculated per-order rate.</p>
+            <div className="plan-price-wrapper">
+              <span className="plan-currency">₹</span>
+              <span className="plan-price">
+                {plusPricing.isDynamic ? plusPricing.fee.toLocaleString() : (isAnnual ? "3,999*" : "4,999*")}
+              </span>
+              <span className="plan-billing-period">/month</span>
+            </div>
+            <div className="dynamic-avg-rate">
+              Avg. ₹{plusPricing.rate}/order request
             </div>
             <ul className="plan-features-list">
               <li className="plan-feature-item">
@@ -232,23 +321,23 @@ export default function PricingPage() {
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Custom AI predictive models for RTO</span>
+                <span className="plan-feature-text">Custom predictive AI models for RTO</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">WhatsApp confirmation + address correction</span>
+                <span className="plan-feature-text">WhatsApp + IVR + SMS confirmations</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text"><strong>Automated IVR callback confirmation</strong></span>
+                <span className="plan-feature-text">Custom Address Correction AI</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
                 <span className="plan-feature-text">Fully customizable custom-CSS tracking page</span>
               </li>
             </ul>
-            <button className="plan-btn" onClick={() => handlePlanSelect("VIP")}>
-              Upgrade to VIP
+            <button className="plan-btn" onClick={() => handlePlanSelect("Plus")}>
+              Contact Plus Support
             </button>
           </div>
 
@@ -274,12 +363,20 @@ export default function PricingPage() {
                 <input 
                   type="range" 
                   min="50" 
-                  max="5000" 
+                  max="10000" 
                   step="50"
                   value={monthlyOrders}
                   onChange={(e) => setMonthlyOrders(Number(e.target.value))}
                   className="slider-input"
                 />
+                <span className="slider-tier-info">
+                  Active Tier: <strong style={{ textTransform: "capitalize" }}>{activeTier}</strong> ({
+                    activeTier === "starter" ? "0 - 500 orders" :
+                    activeTier === "growth" ? "500 - 1000 orders" :
+                    activeTier === "pro" ? "1000 - 2000 orders" :
+                    "2000+ orders (Dynamic Price)"
+                  })
+                </span>
               </div>
 
               {/* Field: Average Order Value */}
@@ -352,57 +449,64 @@ export default function PricingPage() {
             <table className="comparison-table">
               <thead>
                 <tr>
-                  <th style={{ width: "34%" }}>Feature</th>
-                  <th style={{ width: "22%" }}>Lite</th>
-                  <th style={{ width: "22%" }}>Growth</th>
-                  <th style={{ width: "22%" }}>VIP</th>
+                  <th style={{ width: "24%" }}>Feature</th>
+                  <th style={{ width: "19%" }}>Starter</th>
+                  <th style={{ width: "19%" }}>Growth</th>
+                  <th style={{ width: "19%" }}>Pro</th>
+                  <th style={{ width: "19%" }}>Plus</th>
                 </tr>
               </thead>
               <tbody>
                 
                 {/* Category: Shipping */}
                 <tr className="feature-category-row">
-                  <td colSpan="4">Shipping & Logistics</td>
+                  <td colSpan="5">Shipping & Logistics</td>
                 </tr>
                 <tr>
                   <td>Courier Integrations</td>
                   <td>2 Basic</td>
                   <td>6 Premium</td>
                   <td>All partners + Express Air</td>
+                  <td>All partners + Priority Air</td>
                 </tr>
                 <tr>
                   <td>Shipping Rates Discount</td>
                   <td>Standard pricing</td>
-                  <td>Up to 10% off standard rates</td>
-                  <td>Up to 22% off standard rates</td>
+                  <td>Up to 10% off</td>
+                  <td>Up to 15% off</td>
+                  <td>Up to 22% off</td>
                 </tr>
                 <tr>
                   <td>COD Remittance Cycle</td>
                   <td>Weekly (7 Days)</td>
                   <td>Bi-weekly (2 Days)</td>
-                  <td><strong>Next-day (24 Hours)</strong></td>
+                  <td><strong>Next-day (24h)</strong></td>
+                  <td><strong>Next-day (24h)</strong></td>
                 </tr>
 
                 {/* Category: RTO Prevention */}
                 <tr className="feature-category-row">
-                  <td colSpan="4">RTO Prevention Suite</td>
+                  <td colSpan="5">RTO Prevention Suite</td>
                 </tr>
                 <tr>
                   <td>AI RTO Risk Scoring</td>
                   <td>Basic high-risk tags</td>
                   <td>Predictive AI flags</td>
-                  <td>Custom store-trained AI models</td>
+                  <td>Custom store-trained AI</td>
+                  <td>Custom store-trained AI</td>
                 </tr>
                 <tr>
                   <td>WhatsApp Verification</td>
-                  <td>{crossIcon}</td>
-                  <td>{checkIcon} (Automated)</td>
-                  <td>{checkIcon} (Automated with address edit)</td>
+                  <td>{checkIcon} (Standard)</td>
+                  <td>{checkIcon} (Standard)</td>
+                  <td>{checkIcon} (With address correction)</td>
+                  <td>{checkIcon} (With address correction)</td>
                 </tr>
                 <tr>
                   <td>IVR Call Verification</td>
                   <td>{crossIcon}</td>
                   <td>{crossIcon}</td>
+                  <td>{checkIcon} (Fallback confirmations)</td>
                   <td>{checkIcon} (Fallback confirmations)</td>
                 </tr>
                 <tr>
@@ -410,32 +514,36 @@ export default function PricingPage() {
                   <td>{crossIcon}</td>
                   <td>Manual check prompts</td>
                   <td>Automated via WhatsApp/AI</td>
+                  <td>Automated via WhatsApp/AI</td>
                 </tr>
 
                 {/* Category: Reconciliation */}
                 <tr className="feature-category-row">
-                  <td colSpan="4">Weight Reconciliation</td>
+                  <td colSpan="5">Weight Reconciliation</td>
                 </tr>
                 <tr>
                   <td>Dispute Management</td>
                   <td>Manual dispute templates</td>
+                  <td>1-Click dispute filings</td>
                   <td>1-Click dispute filings</td>
                   <td>Auto-file disputes via courier API</td>
                 </tr>
 
                 {/* Category: Support */}
                 <tr className="feature-category-row">
-                  <td colSpan="4">Support & Branding</td>
+                  <td colSpan="5">Support & Branding</td>
                 </tr>
                 <tr>
                   <td>Support Channels</td>
                   <td>Email (48-hour SLA)</td>
+                  <td>Chat & Email (4-hour SLA)</td>
                   <td>Chat & Email (4-hour SLA)</td>
                   <td>Dedicated Manager & 24/7 Phone</td>
                 </tr>
                 <tr>
                   <td>Branded Tracking Page</td>
                   <td>Standard Shopify</td>
+                  <td>Branded with logo/color</td>
                   <td>Branded with logo/color</td>
                   <td>White-labeled + Custom HTML/CSS</td>
                 </tr>
