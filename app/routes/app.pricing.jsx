@@ -78,11 +78,18 @@ export default function PricingPage() {
   }, [monthlyOrders, aov, codShare, activeTier]);
 
   const handlePlanSelect = (planName) => {
-    const message = `Initiated checkout flow for the ${planName} Plan (${isAnnual ? "Annual" : "Monthly"}).`;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("simulated_plan", planName);
+    }
+    const message = `Activated the ${planName} Plan! Navigating to Dashboard...`;
     if (typeof window !== "undefined" && window.shopify) {
       window.shopify.toast.show(message, { duration: 3000 });
+      setTimeout(() => {
+        window.location.href = "/app";
+      }, 1000);
     } else {
       alert(message);
+      window.location.href = "/app";
     }
   };
 

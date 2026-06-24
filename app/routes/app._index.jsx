@@ -185,12 +185,113 @@ export const loader = async ({ request }) => {
   return { orders: enhancedOrders, storeProducts };
 };
 
+// Premium Glassmorphic Lock Wrapper
+const PlanLockWrapper = ({ children, isLocked, onUpgrade }) => {
+  if (!isLocked) return children;
+
+  return (
+    <div style={{ position: "relative", width: "100%", overflow: "hidden", borderRadius: "12px" }}>
+      {/* Blurred container */}
+      <div style={{ filter: "blur(6px)", pointerEvents: "none", opacity: 0.35 }}>
+        {children}
+      </div>
+      
+      {/* Glassmorphic lock overlay */}
+      <div style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(255, 255, 255, 0.45)",
+        backdropFilter: "blur(3px)",
+        borderRadius: "12px",
+        zIndex: 10,
+        padding: "24px",
+        textAlign: "center"
+      }}>
+        <div style={{
+          width: "48px",
+          height: "48px",
+          borderRadius: "50%",
+          backgroundColor: "#f5f3ff",
+          color: "#4f46e5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: "16px",
+          boxShadow: "0 4px 12px rgba(79, 70, 229, 0.15)",
+          border: "1px solid rgba(79, 70, 229, 0.2)"
+        }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <h4 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>
+          Premium Feature Locked
+        </h4>
+        <p style={{ fontSize: "13px", color: "#4b5563", margin: "0 0 16px 0", maxWidth: "300px" }}>
+          Upgrade to the **Growth ($10/mo)** plan or higher to unlock this visualization.
+        </p>
+        <button
+          onClick={onUpgrade}
+          style={{
+            padding: "8px 20px",
+            fontSize: "13px",
+            fontWeight: "600",
+            color: "#ffffff",
+            backgroundColor: "#4f46e5",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+            boxShadow: "0 2px 4px rgba(79, 70, 229, 0.2)",
+            transition: "background-color 0.2s"
+          }}
+          onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#4338ca"}
+          onMouseOut={(e) => e.currentTarget.style.backgroundColor = "#4f46e5"}
+        >
+          Upgrade Plan
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export default function Index() {
   const { orders = [], storeProducts = [] } = useLoaderData() || {};
 
+  const [activePlan, setActivePlan] = useState("Growth");
   const [activeOrderCardTitle, setActiveOrderCardTitle] = useState(null);
   const orderChartRef = useRef(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Sync simulated plan state with localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedPlan = localStorage.getItem("simulated_plan");
+      if (savedPlan) {
+        setActivePlan(savedPlan);
+      }
+    }
+  }, []);
+
+  const handlePlanChange = (plan) => {
+    setActivePlan(plan);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("simulated_plan", plan);
+    }
+  };
+
+  const isLocked = activePlan === "Starter";
+
+  const handleUpgrade = () => {
+    window.location.href = "/app/pricing";
+  };
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -612,6 +713,43 @@ export default function Index() {
               setCourierFilter={setCourierFilter}
             />
 
+            {/* Plan Simulator Dropdown */}
+            <div style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 16px",
+              backgroundColor: "#f9fafb",
+              borderRadius: "8px",
+              border: "1px solid #e5e7eb",
+              marginTop: "-8px",
+              marginBottom: "8px"
+            }}>
+              <span style={{ fontSize: "13px", color: "#4b5563", fontWeight: "500" }}>Simulated Plan:</span>
+              <select
+                value={activePlan}
+                onChange={(e) => handlePlanChange(e.target.value)}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  color: "#1f2937",
+                  borderRadius: "6px",
+                  border: "1px solid #c9cccf",
+                  backgroundColor: "#ffffff",
+                  cursor: "pointer",
+                  outline: "none",
+                  boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+                }}
+              >
+                <option value="Starter">Starter ($5/mo) - Locked Features</option>
+                <option value="Growth">Growth ($10/mo) - Unlocked</option>
+                <option value="Pro">Pro ($20/mo) - Unlocked</option>
+                <option value="Plus">Plus (Dynamic/mo) - Unlocked</option>
+              </select>
+            </div>
+
             {/* ── Key Metrics & Revenue Overview ── */}
             <div id="dashboard-overview" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <OrderCards metrics={metrics} activeOrderCardTitle={activeOrderCardTitle} setActiveOrderCardTitle={setActiveOrderCardTitle} />
@@ -667,28 +805,34 @@ export default function Index() {
             </div>
 
             {/* ── Product Revenue Card ── */}
-            <div id="dashboard-product-revenue" style={{ marginTop: '8px' }}>
-              <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827', marginBottom: '16px', letterSpacing: '-0.3px' }}>Product Revenue</div>
-              <ProductRevenue data={rtoAnalysis.productRevenues} />
-            </div>
+            <PlanLockWrapper isLocked={isLocked} onUpgrade={handleUpgrade}>
+              <div id="dashboard-product-revenue" style={{ marginTop: '8px' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827', marginBottom: '16px', letterSpacing: '-0.3px' }}>Product Revenue</div>
+                <ProductRevenue data={rtoAnalysis.productRevenues} />
+              </div>
+            </PlanLockWrapper>
 
             {/* ── RTO Analysis Cards ── */}
-            <div id="dashboard-rto-breakdown" style={{ marginTop: '8px' }}>
-              <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827', marginBottom: '20px', letterSpacing: '-0.3px' }}>RTO Analysis</div>
+            <PlanLockWrapper isLocked={isLocked} onUpgrade={handleUpgrade}>
+              <div id="dashboard-rto-breakdown" style={{ marginTop: '8px' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827', marginBottom: '20px', letterSpacing: '-0.3px' }}>RTO Analysis</div>
 
-              {/* 2-column grid — align-items:start keeps cards independent heights */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', alignItems: 'start' }}>
-                <RTOAnalysis title="🚚 Top RTO Couriers" label="Courier" data={rtoAnalysis.couriers} showInTransit />
-                <RTOAnalysis title="🏙️ Top RTO States" label="State" data={rtoAnalysis.states} />
-                <RTOAnalysis title="🌆 Top RTO Cities" label="City" data={rtoAnalysis.cities} />
-                <RTOAnalysis title="📮 Top RTO Pincodes" label="Pincode" data={rtoAnalysis.pincodes} />
+                {/* 2-column grid — align-items:start keeps cards independent heights */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', alignItems: 'start' }}>
+                  <RTOAnalysis title="🚚 Top RTO Couriers" label="Courier" data={rtoAnalysis.couriers} showInTransit />
+                  <RTOAnalysis title="🏙️ Top RTO States" label="State" data={rtoAnalysis.states} />
+                  <RTOAnalysis title="🌆 Top RTO Cities" label="City" data={rtoAnalysis.cities} />
+                  <RTOAnalysis title="📮 Top RTO Pincodes" label="Pincode" data={rtoAnalysis.pincodes} />
+                </div>
               </div>
-            </div>
+            </PlanLockWrapper>
 
             {/* ── India Heat Map ── */}
-            <div id="dashboard-india-map">
-              <IndiaHeatMap statesData={rtoAnalysis.states} />
-            </div>
+            <PlanLockWrapper isLocked={isLocked} onUpgrade={handleUpgrade}>
+              <div id="dashboard-india-map">
+                <IndiaHeatMap statesData={rtoAnalysis.states} />
+              </div>
+            </PlanLockWrapper>
 
           </BlockStack>
         </Page>
