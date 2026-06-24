@@ -8,10 +8,7 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 
-// Define plan constants
-export const PLAN_STARTER = "Starter Plan";
-export const PLAN_GROWTH = "Growth Plan";
-export const PLAN_PRO = "Pro Plan";
+import { PLAN_STARTER, PLAN_GROWTH, PLAN_PRO } from "./utils/billing";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,

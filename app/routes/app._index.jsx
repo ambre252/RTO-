@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useLoaderData } from "react-router";
-import { authenticate, PLAN_STARTER, PLAN_GROWTH, PLAN_PRO } from "../shopify.server";
+import { authenticate } from "../shopify.server";
+import { PLAN_STARTER, PLAN_GROWTH, PLAN_PRO } from "../utils/billing";
 import { normalizeDeliveryStatus, enrichConnectorOrderDetails, getIsConnectorNoTracking } from "../utils/orders";
 import ProductRTO from "../components/ProductRTO";
 import RTOAnalysis from "../components/RTOAnalysis";

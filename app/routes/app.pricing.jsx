@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Form, useLoaderData } from "react-router";
-import { authenticate, PLAN_STARTER, PLAN_GROWTH, PLAN_PRO } from "../shopify.server";
+import { authenticate } from "../shopify.server";
+import { PLAN_STARTER, PLAN_GROWTH, PLAN_PRO } from "../utils/billing";
 import "../styles/app.pricing.css";
 
 export const loader = async ({ request }) => {
