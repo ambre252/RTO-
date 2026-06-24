@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useLoaderData } from "react-router";
-import { authenticate } from "../shopify.server";
+import { authenticate, PLAN_STARTER, PLAN_GROWTH, PLAN_PRO } from "../shopify.server";
 import { normalizeDeliveryStatus, enrichConnectorOrderDetails, getIsConnectorNoTracking } from "../utils/orders";
 import ProductRTO from "../components/ProductRTO";
 import RTOAnalysis from "../components/RTOAnalysis";
@@ -24,9 +24,17 @@ import '@shopify/polaris/build/esm/styles.css';
 import enTranslations from '@shopify/polaris/locales/en.json';
 
 export const loader = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, billing } = await authenticate.admin(request);
 
-  // ── 1. Fetch all store products (paginated) ──────────────────────────────
+  // ── 1. Check active billing plans ───────────────────────────────────────
+  const billingCheck = await billing.check({
+    plans: [PLAN_STARTER, PLAN_GROWTH, PLAN_PRO],
+    isTest: true,
+  });
+
+  const activePlanName = billingCheck.hasActivePayment ? billingCheck.activePlans[0]?.name : null;
+
+  // ── 2. Fetch all store products (paginated) ──────────────────────────────
   let allStoreProducts = [];
   let productHasNextPage = true;
   let productCursor = null;
@@ -60,7 +68,7 @@ export const loader = async ({ request }) => {
   // Sort & deduplicate product titles
   const storeProducts = [...new Set(allStoreProducts)].sort();
 
-  // ── 2. Fetch all orders (paginated) ─────────────────────────────────────
+  // ── 3. Fetch all orders (paginated) ─────────────────────────────────────
   let allRawOrders = [];
   let hasNextPage = true;
   let cursor = null;
@@ -182,7 +190,7 @@ export const loader = async ({ request }) => {
     return { ...order, orderDeliveryStatus, shippingCity, shippingState, shippingPincode, ...connectorDetails };
   });
 
-  return { orders: enhancedOrders, storeProducts };
+  return { orders: enhancedOrders, storeProducts, activePlanName };
 };
 
 // Premium Glassmorphic Lock Wrapper
@@ -263,22 +271,25 @@ const PlanLockWrapper = ({ children, isLocked, onUpgrade }) => {
 };
 
 export default function Index() {
-  const { orders = [], storeProducts = [] } = useLoaderData() || {};
+  const { orders = [], storeProducts = [], activePlanName } = useLoaderData() || {};
 
   const [activePlan, setActivePlan] = useState("Growth");
   const [activeOrderCardTitle, setActiveOrderCardTitle] = useState(null);
   const orderChartRef = useRef(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Sync simulated plan state with localStorage on mount
+  // Sync simulated plan state with localStorage on mount (falls back to real active plan status)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedPlan = localStorage.getItem("simulated_plan");
       if (savedPlan) {
         setActivePlan(savedPlan);
+      } else if (activePlanName) {
+        const formatted = activePlanName.replace(" Plan", "");
+        setActivePlan(formatted);
       }
     }
-  }, []);
+  }, [activePlanName]);
 
   const handlePlanChange = (plan) => {
     setActivePlan(plan);

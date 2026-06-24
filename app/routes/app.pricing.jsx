@@ -1,7 +1,38 @@
 import { useState, useMemo } from "react";
+import { Form, useLoaderData } from "react-router";
+import { authenticate, PLAN_STARTER, PLAN_GROWTH, PLAN_PRO } from "../shopify.server";
 import "../styles/app.pricing.css";
 
+export const loader = async ({ request }) => {
+  const { billing } = await authenticate.admin(request);
+  
+  // Verify active billing plans
+  const billingCheck = await billing.check({
+    plans: [PLAN_STARTER, PLAN_GROWTH, PLAN_PRO],
+    isTest: true,
+  });
+
+  const activePlanName = billingCheck.hasActivePayment ? billingCheck.activePlans[0]?.name : null;
+
+  return { activePlanName };
+};
+
+export const action = async ({ request }) => {
+  const { admin, billing } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const planName = formData.get("planName");
+
+  // Requests the recurring charge approval from merchant and redirects to Shopify
+  return await billing.request({
+    plan: planName,
+    isTest: true, // Use true in development
+    returnUrl: `https://${admin.domain}/admin/apps/${process.env.SHOPIFY_API_KEY}/app`,
+  });
+};
+
 export default function PricingPage() {
+  const { activePlanName } = useLoaderData();
+
   // Billing cycle state
   const [isAnnual, setIsAnnual] = useState(false);
 
@@ -77,22 +108,6 @@ export default function PricingPage() {
     };
   }, [monthlyOrders, aov, codShare, activeTier]);
 
-  const handlePlanSelect = (planName) => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("simulated_plan", planName);
-    }
-    const message = `Activated the ${planName} Plan! Navigating to Dashboard...`;
-    if (typeof window !== "undefined" && window.shopify) {
-      window.shopify.toast.show(message, { duration: 3000 });
-      setTimeout(() => {
-        window.location.href = "/app";
-      }, 1000);
-    } else {
-      alert(message);
-      window.location.href = "/app";
-    }
-  };
-
   const toggleFaq = (index) => {
     setActiveFaq(activeFaq === index ? null : index);
   };
@@ -148,8 +163,12 @@ export default function PricingPage() {
         <div className="plans-grid">
           
           {/* Starter Plan */}
-          <div className={`plan-card ${activeTier === "starter" ? "active-highlight" : ""}`}>
-            {activeTier === "starter" && <span className="recommended-badge">Active Selection</span>}
+          <div className={`plan-card ${activeTier === "starter" ? "active-highlight" : ""} ${activePlanName === PLAN_STARTER ? "current-plan-card" : ""}`}>
+            {activePlanName === PLAN_STARTER ? (
+              <span className="recommended-badge current-plan-badge">Current Plan</span>
+            ) : (
+              activeTier === "starter" && <span className="recommended-badge">Recommended</span>
+            )}
             <h3 className="plan-type">Starter</h3>
             <p className="plan-desc">For small brands with <strong>0 - 500</strong> monthly orders. Basic analytics tracking.</p>
             <div className="plan-price-wrapper">
@@ -191,14 +210,27 @@ export default function PricingPage() {
                 <span className="plan-feature-text disabled">Premium PowerPoint (PPT) report export</span>
               </li>
             </ul>
-            <button className="plan-btn" onClick={() => handlePlanSelect("Starter")}>
-              Choose Starter
-            </button>
+            {activePlanName === PLAN_STARTER ? (
+              <button className="plan-btn active-plan-btn" disabled>
+                Active
+              </button>
+            ) : (
+              <Form method="post">
+                <input type="hidden" name="planName" value={PLAN_STARTER} />
+                <button type="submit" className="plan-btn">
+                  Choose Starter
+                </button>
+              </Form>
+            )}
           </div>
 
           {/* Growth Plan */}
-          <div className={`plan-card ${activeTier === "growth" ? "active-highlight" : ""}`}>
-            {activeTier === "growth" && <span className="recommended-badge">Active Selection</span>}
+          <div className={`plan-card ${activeTier === "growth" ? "active-highlight" : ""} ${activePlanName === PLAN_GROWTH ? "current-plan-card" : ""}`}>
+            {activePlanName === PLAN_GROWTH ? (
+              <span className="recommended-badge current-plan-badge">Current Plan</span>
+            ) : (
+              activeTier === "growth" && <span className="recommended-badge">Recommended</span>
+            )}
             <h3 className="plan-type">Growth</h3>
             <p className="plan-desc">For growing stores with <strong>500 - 1,000</strong> monthly orders. Adds deep visual insights.</p>
             <div className="plan-price-wrapper">
@@ -236,14 +268,27 @@ export default function PricingPage() {
                 <span className="plan-feature-text disabled">Premium PowerPoint (PPT) report export</span>
               </li>
             </ul>
-            <button className="plan-btn" onClick={() => handlePlanSelect("Growth")}>
-              Choose Growth
-            </button>
+            {activePlanName === PLAN_GROWTH ? (
+              <button className="plan-btn active-plan-btn" disabled>
+                Active
+              </button>
+            ) : (
+              <Form method="post">
+                <input type="hidden" name="planName" value={PLAN_GROWTH} />
+                <button type="submit" className="plan-btn">
+                  Choose Growth
+                </button>
+              </Form>
+            )}
           </div>
 
           {/* Pro Plan */}
-          <div className={`plan-card ${activeTier === "pro" ? "active-highlight" : ""}`}>
-            {activeTier === "pro" && <span className="recommended-badge">Active Selection</span>}
+          <div className={`plan-card ${activeTier === "pro" ? "active-highlight" : ""} ${activePlanName === PLAN_PRO ? "current-plan-card" : ""}`}>
+            {activePlanName === PLAN_PRO ? (
+              <span className="recommended-badge current-plan-badge">Current Plan</span>
+            ) : (
+              activeTier === "pro" && <span className="recommended-badge">Recommended</span>
+            )}
             <h3 className="plan-type">Pro</h3>
             <p className="plan-desc">For high-volume stores with <strong>1,000 - 2,000</strong> monthly orders. Exporters & connectors.</p>
             <div className="plan-price-wrapper">
@@ -277,14 +322,23 @@ export default function PricingPage() {
                 <span className="plan-feature-text">Standard email & chat customer support</span>
               </li>
             </ul>
-            <button className="plan-btn" onClick={() => handlePlanSelect("Pro")}>
-              Choose Pro
-            </button>
+            {activePlanName === PLAN_PRO ? (
+              <button className="plan-btn active-plan-btn" disabled>
+                Active
+              </button>
+            ) : (
+              <Form method="post">
+                <input type="hidden" name="planName" value={PLAN_PRO} />
+                <button type="submit" className="plan-btn">
+                  Choose Pro
+                </button>
+              </Form>
+            )}
           </div>
 
           {/* Plus Plan (Dynamic 2000+) */}
           <div className={`plan-card ${activeTier === "plus" ? "active-highlight plus-dynamic-card" : ""}`}>
-            {activeTier === "plus" && <span className="recommended-badge">Active Selection</span>}
+            {activeTier === "plus" && <span className="recommended-badge">Recommended</span>}
             <h3 className="plan-type">Plus</h3>
             <p className="plan-desc">For enterprise brands with <strong>2,000+</strong> orders. Customizable analytics.</p>
             <div className="plan-price-wrapper">
@@ -319,9 +373,13 @@ export default function PricingPage() {
                 <span className="plan-feature-text">Dedicated account manager & 24/7 support</span>
               </li>
             </ul>
-            <button className="plan-btn" onClick={() => handlePlanSelect("Plus")}>
-              Contact Plus Support
-            </button>
+            <a 
+              href="mailto:support@rtoanalytics.com?subject=Plus%20Plan%20Inquiry"
+              className="plan-btn"
+              style={{ textDecoration: "none", textAlign: "center", display: "block", boxSizing: "border-box" }}
+            >
+              Contact Support
+            </a>
           </div>
 
         </div>
