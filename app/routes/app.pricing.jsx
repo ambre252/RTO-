@@ -8,9 +8,9 @@ export default function PricingPage() {
   // FAQ Accordion state
   const [activeFaq, setActiveFaq] = useState(null);
 
-  // Calculator inputs state
+  // Calculator inputs state (in USD)
   const [monthlyOrders, setMonthlyOrders] = useState(750); // Default to Growth tier
-  const [aov, setAov] = useState(1200);
+  const [aov, setAov] = useState(50); // In USD
   const [codShare, setCodShare] = useState(60);
 
   // Gating Logic: Determine active highlighted plan based on slider
@@ -21,20 +21,20 @@ export default function PricingPage() {
     return "plus";
   }, [monthlyOrders]);
 
-  // Plus Plan Dynamic Price Calculation
+  // Plus Plan Dynamic Price Calculation (in USD)
   const plusPricing = useMemo(() => {
-    let rate = 2.50; // default rate per order for 2000-5000
+    let rate = 0.030; // $0.030 per order for 2000-5000
     if (monthlyOrders >= 5000) {
-      rate = 2.00;   // discounted rate for 5000-10000
+      rate = 0.025;   // $0.025 for 5000-10000
     }
     if (monthlyOrders >= 10000) {
-      rate = 1.50;   // enterprise rate for 10000+
+      rate = 0.020;   // $0.020 for 10000+
     }
 
     const basePrice = monthlyOrders * rate;
     // Billed annually discount of 20%
     const monthlyFee = isAnnual ? Math.round(basePrice * 0.8) : Math.round(basePrice);
-    const displayRate = isAnnual ? (rate * 0.8).toFixed(2) : rate.toFixed(2);
+    const displayRate = isAnnual ? (rate * 0.8).toFixed(3) : rate.toFixed(3);
 
     return {
       fee: monthlyFee,
@@ -43,7 +43,7 @@ export default function PricingPage() {
     };
   }, [monthlyOrders, isAnnual]);
 
-  // Calculator math
+  // Calculator math (in USD)
   const calculatorSavings = useMemo(() => {
     const codOrders = monthlyOrders * (codShare / 100);
     
@@ -60,11 +60,11 @@ export default function PricingPage() {
     const optimizedRtoOrders = codOrders * optimizedRtoRate;
     const ordersSaved = Math.round(standardRtoOrders - optimizedRtoOrders);
     
-    // Average Cost of RTO per order:
-    // Forward + Reverse shipping: ₹75
-    // Packaging & operations waste: ₹30
+    // Average Cost of RTO per order in USD:
+    // Forward + Reverse shipping & processing: $8.00
+    // Packaging & operations waste: $2.00
     // Locked inventory / item depreciation: 5% of AOV
-    const rtoCostPerOrder = 75 + 30 + (aov * 0.05);
+    const rtoCostPerOrder = 8 + 2 + (aov * 0.05);
     
     const monthlySavings = Math.round(ordersSaved * rtoCostPerOrder);
     const yearlySavings = monthlySavings * 12;
@@ -146,8 +146,8 @@ export default function PricingPage() {
             <h3 className="plan-type">Starter</h3>
             <p className="plan-desc">For small brands with <strong>0 - 500</strong> monthly orders. Pay-as-you-go logistics.</p>
             <div className="plan-price-wrapper">
-              <span className="plan-currency">₹</span>
-              <span className="plan-price">{isAnnual ? "799" : "999"}</span>
+              <span className="plan-currency">$</span>
+              <span className="plan-price">{isAnnual ? "4" : "5"}</span>
               <span className="plan-billing-period">/month</span>
             </div>
             <ul className="plan-features-list">
@@ -195,8 +195,8 @@ export default function PricingPage() {
             <h3 className="plan-type">Growth</h3>
             <p className="plan-desc">For growing stores with <strong>500 - 1,000</strong> monthly orders. Adds premium couriers.</p>
             <div className="plan-price-wrapper">
-              <span className="plan-currency">₹</span>
-              <span className="plan-price">{isAnnual ? "1,599" : "1,999"}</span>
+              <span className="plan-currency">$</span>
+              <span className="plan-price">{isAnnual ? "8" : "10"}</span>
               <span className="plan-billing-period">/month</span>
             </div>
             <ul className="plan-features-list">
@@ -244,8 +244,8 @@ export default function PricingPage() {
             <h3 className="plan-type">Pro</h3>
             <p className="plan-desc">For high-volume stores with <strong>1,000 - 2,000</strong> monthly orders. IVR & next-day payouts.</p>
             <div className="plan-price-wrapper">
-              <span className="plan-currency">₹</span>
-              <span className="plan-price">{isAnnual ? "3,199" : "3,999"}</span>
+              <span className="plan-currency">$</span>
+              <span className="plan-price">{isAnnual ? "16" : "20"}</span>
               <span className="plan-billing-period">/month</span>
             </div>
             <ul className="plan-features-list">
@@ -293,14 +293,14 @@ export default function PricingPage() {
             <h3 className="plan-type">Plus</h3>
             <p className="plan-desc">For enterprise brands with <strong>2,000+</strong> orders. Dynamically calculated per-order rate.</p>
             <div className="plan-price-wrapper">
-              <span className="plan-currency">₹</span>
+              <span className="plan-currency">$</span>
               <span className="plan-price">
-                {plusPricing.isDynamic ? plusPricing.fee.toLocaleString() : (isAnnual ? "3,999*" : "4,999*")}
+                {plusPricing.isDynamic ? plusPricing.fee.toLocaleString() : (isAnnual ? "24*" : "30*")}
               </span>
               <span className="plan-billing-period">/month</span>
             </div>
             <div className="dynamic-avg-rate">
-              Avg. ₹{plusPricing.rate}/order request
+              Avg. ${plusPricing.rate}/order request
             </div>
             <ul className="plan-features-list">
               <li className="plan-feature-item">
@@ -383,13 +383,13 @@ export default function PricingPage() {
               <div className="calculator-field">
                 <div className="calculator-field-header">
                   <span className="calculator-field-label">Average Order Value (AOV)</span>
-                  <span className="calculator-field-value">₹{aov.toLocaleString()}</span>
+                  <span className="calculator-field-value">${aov.toLocaleString()}</span>
                 </div>
                 <input 
                   type="range" 
-                  min="500" 
-                  max="10000" 
-                  step="100"
+                  min="10" 
+                  max="200" 
+                  step="5"
                   value={aov}
                   onChange={(e) => setAov(Number(e.target.value))}
                   className="slider-input"
@@ -418,7 +418,7 @@ export default function PricingPage() {
             {/* Calculator Results */}
             <div className="calculator-results">
               <p className="results-label">Estimated Monthly Savings</p>
-              <p className="results-savings">₹{calculatorSavings.monthlySavings.toLocaleString()}</p>
+              <p className="results-savings">${calculatorSavings.monthlySavings.toLocaleString()}</p>
               <p className="results-subtext">
                 By preventing checkouts with invalid addresses and confirming purchases, you recover blocked inventory and shipping costs.
               </p>
@@ -426,7 +426,7 @@ export default function PricingPage() {
               <div className="results-breakdown">
                 <div className="breakdown-row">
                   <span className="breakdown-label">Estimated RTO Cost / Order</span>
-                  <span className="breakdown-value">₹{calculatorSavings.rtoCostPerOrder}</span>
+                  <span className="breakdown-value">${calculatorSavings.rtoCostPerOrder}</span>
                 </div>
                 <div className="breakdown-row">
                   <span className="breakdown-label">Monthly Orders Saved from RTO</span>
@@ -434,7 +434,7 @@ export default function PricingPage() {
                 </div>
                 <div className="breakdown-row">
                   <span className="breakdown-label">Annualized Return on Investment</span>
-                  <span className="breakdown-value highlight">₹{calculatorSavings.yearlySavings.toLocaleString()} / year</span>
+                  <span className="breakdown-value highlight">${calculatorSavings.yearlySavings.toLocaleString()} / year</span>
                 </div>
               </div>
             </div>
@@ -579,7 +579,7 @@ export default function PricingPage() {
               </button>
               <div className="faq-answer" style={{ maxHeight: activeFaq === 1 ? "200px" : "0" }}>
                 <div className="faq-answer-content">
-                  Courier partners sometimes overcharge by miscalculating package weights. Our plugin automatically flags weight discrepancies by comparing your store's product weights against courier manifests. On the Growth plan, you get a 1-click dispute generator, while the VIP plan automatically files disputes through the courier APIs, saving you thousands of rupees every month.
+                  Courier partners sometimes overcharge by miscalculating package weights. Our plugin automatically flags weight discrepancies by comparing your store's product weights against courier manifests. On the Growth plan, you get a 1-click dispute generator, while the VIP plan automatically files disputes through the courier APIs, saving you hundreds of dollars every month.
                 </div>
               </div>
             </div>
