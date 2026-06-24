@@ -144,7 +144,7 @@ export default function PricingPage() {
           <div className={`plan-card ${activeTier === "starter" ? "active-highlight" : ""}`}>
             {activeTier === "starter" && <span className="recommended-badge">Active Selection</span>}
             <h3 className="plan-type">Starter</h3>
-            <p className="plan-desc">For small brands with <strong>0 - 500</strong> monthly orders. Pay-as-you-go logistics.</p>
+            <p className="plan-desc">For small brands with <strong>0 - 500</strong> monthly orders. Basic analytics tracking.</p>
             <div className="plan-price-wrapper">
               <span className="plan-currency">$</span>
               <span className="plan-price">{isAnnual ? "4" : "5"}</span>
@@ -153,35 +153,35 @@ export default function PricingPage() {
             <ul className="plan-features-list">
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">2 Basic couriers (Xpressbees, Shadowfax)</span>
+                <span className="plan-feature-text">Basic Order Metrics (Delivered, Failed, etc.)</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Standard rates (Domestic shipping)</span>
+                <span className="plan-feature-text">Order filtering (by Date range & Products)</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Weekly COD remittance (7 days)</span>
+                <span className="plan-feature-text">Top RTO States, Cities & Pincodes lists</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Manual weight dispute upload</span>
-              </li>
-              <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text">Basic RTO risk flags</span>
-              </li>
-              <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text">WhatsApp COD confirmation (Standard)</span>
+                <span className="plan-feature-text">Courier performance comparison breakdown</span>
               </li>
               <li className="plan-feature-item">
                 {crossIcon}
-                <span className="plan-feature-text disabled">Automated IVR verification calls</span>
+                <span className="plan-feature-text disabled">Interactive Product-Breakdown charts</span>
               </li>
               <li className="plan-feature-item">
                 {crossIcon}
-                <span className="plan-feature-text disabled">White-labeled customer tracking page</span>
+                <span className="plan-feature-text disabled">Geographical RTO India Heat Map</span>
+              </li>
+              <li className="plan-feature-item">
+                {crossIcon}
+                <span className="plan-feature-text disabled">Third-party connector status view</span>
+              </li>
+              <li className="plan-feature-item">
+                {crossIcon}
+                <span className="plan-feature-text disabled">Premium PowerPoint (PPT) report export</span>
               </li>
             </ul>
             <button className="plan-btn" onClick={() => handlePlanSelect("Starter")}>
@@ -193,7 +193,7 @@ export default function PricingPage() {
           <div className={`plan-card ${activeTier === "growth" ? "active-highlight" : ""}`}>
             {activeTier === "growth" && <span className="recommended-badge">Active Selection</span>}
             <h3 className="plan-type">Growth</h3>
-            <p className="plan-desc">For growing stores with <strong>500 - 1,000</strong> monthly orders. Adds premium couriers.</p>
+            <p className="plan-desc">For growing stores with <strong>500 - 1,000</strong> monthly orders. Adds deep visual insights.</p>
             <div className="plan-price-wrapper">
               <span className="plan-currency">$</span>
               <span className="plan-price">{isAnnual ? "8" : "10"}</span>
@@ -202,35 +202,31 @@ export default function PricingPage() {
             <ul className="plan-features-list">
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">6 Premium couriers (Blue Dart, Delhivery, etc.)</span>
+                <span className="plan-feature-text">Basic Order Metrics & Filters</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Discounted shipping rates (Up to 10% off)</span>
+                <span className="plan-feature-text">Top RTO States, Cities, Pincodes & Couriers</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Accelerated COD remittance (2-day cycle)</span>
+                <span className="plan-feature-text">Product-level RTO & Revenue charts</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">1-Click weight dispute manager</span>
+                <span className="plan-feature-text"><strong>Interactive Product-Breakdown charts</strong></span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Advanced AI-driven RTO risk flags</span>
-              </li>
-              <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text">WhatsApp COD confirmation (Standard)</span>
+                <span className="plan-feature-text"><strong>Geographical RTO India Heat Map</strong></span>
               </li>
               <li className="plan-feature-item">
                 {crossIcon}
-                <span className="plan-feature-text disabled">Automated IVR verification calls</span>
+                <span className="plan-feature-text disabled">Third-party connector status view</span>
               </li>
               <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text">Standard branded customer tracking page</span>
+                {crossIcon}
+                <span className="plan-feature-text disabled">Premium PowerPoint (PPT) report export</span>
               </li>
             </ul>
             <button className="plan-btn" onClick={() => handlePlanSelect("Growth")}>
@@ -242,7 +238,7 @@ export default function PricingPage() {
           <div className={`plan-card ${activeTier === "pro" ? "active-highlight" : ""}`}>
             {activeTier === "pro" && <span className="recommended-badge">Active Selection</span>}
             <h3 className="plan-type">Pro</h3>
-            <p className="plan-desc">For high-volume stores with <strong>1,000 - 2,000</strong> monthly orders. IVR & next-day payouts.</p>
+            <p className="plan-desc">For high-volume stores with <strong>1,000 - 2,000</strong> monthly orders. Exporters & connectors.</p>
             <div className="plan-price-wrapper">
               <span className="plan-currency">$</span>
               <span className="plan-price">{isAnnual ? "16" : "20"}</span>
@@ -251,35 +247,27 @@ export default function PricingPage() {
             <ul className="plan-features-list">
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">All couriers + Express Air service</span>
+                <span className="plan-feature-text">All Growth visualization & chart features</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Lowest shipping rates (Up to 15% off)</span>
+                <span className="plan-feature-text">Product-level RTO & Revenue charts</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text"><strong>Next-day COD remittance (24h)</strong></span>
+                <span className="plan-feature-text">Geographical RTO India Heat Map</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">1-Click weight dispute manager</span>
+                <span className="plan-feature-text"><strong>Third-party connector status view</strong></span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Custom predictive AI models for RTO</span>
+                <span className="plan-feature-text"><strong>Premium PowerPoint (PPT) report export</strong></span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">WhatsApp confirmation + address correction</span>
-              </li>
-              <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text"><strong>Automated IVR verification calls</strong></span>
-              </li>
-              <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text">Standard branded customer tracking page</span>
+                <span className="plan-feature-text">Standard email & chat customer support</span>
               </li>
             </ul>
             <button className="plan-btn" onClick={() => handlePlanSelect("Pro")}>
@@ -291,7 +279,7 @@ export default function PricingPage() {
           <div className={`plan-card ${activeTier === "plus" ? "active-highlight plus-dynamic-card" : ""}`}>
             {activeTier === "plus" && <span className="recommended-badge">Active Selection</span>}
             <h3 className="plan-type">Plus</h3>
-            <p className="plan-desc">For enterprise brands with <strong>2,000+</strong> orders. Dynamically calculated per-order rate.</p>
+            <p className="plan-desc">For enterprise brands with <strong>2,000+</strong> orders. Customizable analytics.</p>
             <div className="plan-price-wrapper">
               <span className="plan-currency">$</span>
               <span className="plan-price">
@@ -305,35 +293,23 @@ export default function PricingPage() {
             <ul className="plan-features-list">
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">All couriers + Priority Express Air service</span>
+                <span className="plan-feature-text">All Pro level dashboard analytics features</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Lowest shipping rates (Up to 22% off)</span>
+                <span className="plan-feature-text">Premium PowerPoint (PPT) report export</span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text"><strong>Next-day COD remittance (24h)</strong></span>
+                <span className="plan-feature-text"><strong>Custom API metric exports</strong></span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Auto-file weight discrepancies via API</span>
+                <span className="plan-feature-text"><strong>Custom CSS dashboard overrides</strong></span>
               </li>
               <li className="plan-feature-item">
                 {checkIcon}
-                <span className="plan-feature-text">Custom predictive AI models for RTO</span>
-              </li>
-              <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text">WhatsApp + IVR + SMS confirmations</span>
-              </li>
-              <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text">Custom Address Correction AI</span>
-              </li>
-              <li className="plan-feature-item">
-                {checkIcon}
-                <span className="plan-feature-text">Fully customizable custom-CSS tracking page</span>
+                <span className="plan-feature-text">Dedicated account manager & 24/7 support</span>
               </li>
             </ul>
             <button className="plan-btn" onClick={() => handlePlanSelect("Plus")}>
@@ -449,103 +425,105 @@ export default function PricingPage() {
             <table className="comparison-table">
               <thead>
                 <tr>
-                  <th style={{ width: "24%" }}>Feature</th>
-                  <th style={{ width: "19%" }}>Starter</th>
-                  <th style={{ width: "19%" }}>Growth</th>
-                  <th style={{ width: "19%" }}>Pro</th>
-                  <th style={{ width: "19%" }}>Plus</th>
+                  <th style={{ width: "28%" }}>Feature</th>
+                  <th style={{ width: "18%" }}>Starter</th>
+                  <th style={{ width: "18%" }}>Growth</th>
+                  <th style={{ width: "18%" }}>Pro</th>
+                  <th style={{ width: "18%" }}>Plus</th>
                 </tr>
               </thead>
               <tbody>
                 
-                {/* Category: Shipping */}
+                {/* Category: Dashboard Analytics */}
                 <tr className="feature-category-row">
-                  <td colSpan="5">Shipping & Logistics</td>
+                  <td colSpan="5">Dashboard Analytics</td>
                 </tr>
                 <tr>
-                  <td>Courier Integrations</td>
-                  <td>2 Basic</td>
-                  <td>6 Premium</td>
-                  <td>All partners + Express Air</td>
-                  <td>All partners + Priority Air</td>
+                  <td>KPI Order Metrics Tracking</td>
+                  <td>{checkIcon} Basic</td>
+                  <td>{checkIcon} Advanced</td>
+                  <td>{checkIcon} Advanced</td>
+                  <td>{checkIcon} Advanced</td>
                 </tr>
                 <tr>
-                  <td>Shipping Rates Discount</td>
-                  <td>Standard pricing</td>
-                  <td>Up to 10% off</td>
-                  <td>Up to 15% off</td>
-                  <td>Up to 22% off</td>
+                  <td>Filters (Date & Product)</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
                 </tr>
                 <tr>
-                  <td>COD Remittance Cycle</td>
-                  <td>Weekly (7 Days)</td>
-                  <td>Bi-weekly (2 Days)</td>
-                  <td><strong>Next-day (24h)</strong></td>
-                  <td><strong>Next-day (24h)</strong></td>
-                </tr>
-
-                {/* Category: RTO Prevention */}
-                <tr className="feature-category-row">
-                  <td colSpan="5">RTO Prevention Suite</td>
+                  <td>RTO Breakdown Lists</td>
+                  <td>{checkIcon} States/Cities/Pincodes</td>
+                  <td>{checkIcon} Full List</td>
+                  <td>{checkIcon} Full List</td>
+                  <td>{checkIcon} Full List</td>
                 </tr>
                 <tr>
-                  <td>AI RTO Risk Scoring</td>
-                  <td>Basic high-risk tags</td>
-                  <td>Predictive AI flags</td>
-                  <td>Custom store-trained AI</td>
-                  <td>Custom store-trained AI</td>
+                  <td>Product-level RTO & Revenue</td>
+                  <td>{crossIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
                 </tr>
                 <tr>
-                  <td>WhatsApp Verification</td>
-                  <td>{checkIcon} (Standard)</td>
-                  <td>{checkIcon} (Standard)</td>
-                  <td>{checkIcon} (With address correction)</td>
-                  <td>{checkIcon} (With address correction)</td>
+                  <td>Interactive Product Breakdown</td>
+                  <td>{crossIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
                 </tr>
                 <tr>
-                  <td>IVR Call Verification</td>
+                  <td>Geographical India Heat Map</td>
+                  <td>{crossIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
+                </tr>
+                <tr>
+                  <td>Third-Party Connector Status</td>
                   <td>{crossIcon}</td>
                   <td>{crossIcon}</td>
-                  <td>{checkIcon} (Fallback confirmations)</td>
-                  <td>{checkIcon} (Fallback confirmations)</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
+                </tr>
+
+                {/* Category: Reporting & Sharing */}
+                <tr className="feature-category-row">
+                  <td colSpan="5">Reporting & Sharing</td>
                 </tr>
                 <tr>
-                  <td>Address Auto-Correction</td>
+                  <td>PowerPoint (PPT) Exporter</td>
                   <td>{crossIcon}</td>
-                  <td>Manual check prompts</td>
-                  <td>Automated via WhatsApp/AI</td>
-                  <td>Automated via WhatsApp/AI</td>
+                  <td>{crossIcon}</td>
+                  <td>{checkIcon}</td>
+                  <td>{checkIcon}</td>
+                </tr>
+                <tr>
+                  <td>Custom API Metrics Export</td>
+                  <td>{crossIcon}</td>
+                  <td>{crossIcon}</td>
+                  <td>{crossIcon}</td>
+                  <td>{checkIcon}</td>
                 </tr>
 
-                {/* Category: Reconciliation */}
+                {/* Category: Support & Customization */}
                 <tr className="feature-category-row">
-                  <td colSpan="5">Weight Reconciliation</td>
+                  <td colSpan="5">Support & Customization</td>
                 </tr>
                 <tr>
-                  <td>Dispute Management</td>
-                  <td>Manual dispute templates</td>
-                  <td>1-Click dispute filings</td>
-                  <td>1-Click dispute filings</td>
-                  <td>Auto-file disputes via courier API</td>
-                </tr>
-
-                {/* Category: Support */}
-                <tr className="feature-category-row">
-                  <td colSpan="5">Support & Branding</td>
+                  <td>Support Channel SLA</td>
+                  <td>Email (48h)</td>
+                  <td>Chat & Email (4h)</td>
+                  <td>Chat & Email (4h)</td>
+                  <td>Dedicated Manager (24/7)</td>
                 </tr>
                 <tr>
-                  <td>Support Channels</td>
-                  <td>Email (48-hour SLA)</td>
-                  <td>Chat & Email (4-hour SLA)</td>
-                  <td>Chat & Email (4-hour SLA)</td>
-                  <td>Dedicated Manager & 24/7 Phone</td>
-                </tr>
-                <tr>
-                  <td>Branded Tracking Page</td>
-                  <td>Standard Shopify</td>
-                  <td>Branded with logo/color</td>
-                  <td>Branded with logo/color</td>
-                  <td>White-labeled + Custom HTML/CSS</td>
+                  <td>Custom Dashboard Theme/CSS</td>
+                  <td>{crossIcon}</td>
+                  <td>{crossIcon}</td>
+                  <td>{crossIcon}</td>
+                  <td>{checkIcon}</td>
                 </tr>
 
               </tbody>
@@ -561,12 +539,12 @@ export default function PricingPage() {
             {/* FAQ 1 */}
             <div className={`faq-item ${activeFaq === 0 ? "open" : ""}`}>
               <button className="faq-question-btn" onClick={() => toggleFaq(0)}>
-                <span>What is RTO in Indian e-commerce, and how does this plugin help reduce it?</span>
+                <span>What is RTO in Indian e-commerce, and how does this dashboard help reduce it?</span>
                 {arrowIcon}
               </button>
               <div className="faq-answer" style={{ maxHeight: activeFaq === 0 ? "200px" : "0" }}>
                 <div className="faq-answer-content">
-                  RTO stands for Return to Origin. In India, up to 60-70% of e-commerce orders are Cash on Delivery (COD). Around 20% of these COD orders are returned because the customer is unavailable, rejects the package, or gave an incorrect address. This app verifies COD orders using automated WhatsApp templates and IVR calls, allowing you to cancel fake/fraudulent orders before shipping, reducing RTO by up to 60%.
+                  RTO stands for Return to Origin. In India, up to 60-70% of e-commerce orders are Cash on Delivery (COD). Around 20% of these COD orders are returned because the customer is unavailable, rejects the package, or gave an incorrect address. This application provides real-time dashboard analytics, geographical heat maps, and detailed courier/product breakdowns to help you identify high-risk areas, choose optimal delivery partners, and implement focused RTO reduction strategies.
                 </div>
               </div>
             </div>
@@ -574,12 +552,12 @@ export default function PricingPage() {
             {/* FAQ 2 */}
             <div className={`faq-item ${activeFaq === 1 ? "open" : ""}`}>
               <button className="faq-question-btn" onClick={() => toggleFaq(1)}>
-                <span>How does the weight reconciliation dispute manager work?</span>
+                <span>How does the PowerPoint export feature work?</span>
                 {arrowIcon}
               </button>
               <div className="faq-answer" style={{ maxHeight: activeFaq === 1 ? "200px" : "0" }}>
                 <div className="faq-answer-content">
-                  Courier partners sometimes overcharge by miscalculating package weights. Our plugin automatically flags weight discrepancies by comparing your store's product weights against courier manifests. On the Growth plan, you get a 1-click dispute generator, while the VIP plan automatically files disputes through the courier APIs, saving you hundreds of dollars every month.
+                  Available on the Pro and Plus plans, the PowerPoint export utility captures your active dashboard visual components (KPI metric cards, charts, breakdowns, and heat maps) in high-resolution, formats them automatically into a professional report deck, and downloads it directly to your device for easy sharing.
                 </div>
               </div>
             </div>
@@ -605,7 +583,7 @@ export default function PricingPage() {
               </button>
               <div className="faq-answer" style={{ maxHeight: activeFaq === 3 ? "200px" : "0" }}>
                 <div className="faq-answer-content">
-                  No, we do not charge any percentage of your shipping spend or sales revenue. You pay your courier partners directly for your shipping labels (with discounts automatically applied if you use our standard rates) and pay only the flat monthly/annual fee listed above for our software tools.
+                  No. Unlike shipping aggregators, we do not charge any transaction fees, commissions, or percentages of your order values. You pay only the flat monthly/annual fee listed above for our performance reporting software tools.
                 </div>
               </div>
             </div>
@@ -613,12 +591,12 @@ export default function PricingPage() {
             {/* FAQ 5 */}
             <div className={`faq-item ${activeFaq === 4 ? "open" : ""}`}>
               <button className="faq-question-btn" onClick={() => toggleFaq(4)}>
-                <span>What is next-day COD remittance?</span>
+                <span>How frequently is the dashboard data synced with my store?</span>
                 {arrowIcon}
               </button>
               <div className="faq-answer" style={{ maxHeight: activeFaq === 4 ? "200px" : "0" }}>
                 <div className="faq-answer-content">
-                  Normally, courier partners hold cash collected from COD orders for 7 to 15 days, which hurts your cash flow. With our Next-Day Payout feature (available on Growth and VIP plans), we sync with courier databases and deposit COD cash into your bank account within 24 hours of delivery.
+                  The dashboard syncs in real-time with your Shopify store. Whenever an order is created, fulfilled, or its delivery tracking status updates, the dashboard charts and tables immediately refresh to reflect the latest figures.
                 </div>
               </div>
             </div>
