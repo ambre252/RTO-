@@ -14,6 +14,10 @@
 const fs = require('fs');
 const path = require('path');
 
+console.log('[startup] Node version:', process.version);
+console.log('[startup] Executable:', process.execPath);
+console.log('[startup] Working directory:', process.cwd());
+
 // --- Load .env file manually (synchronous, before ESM import) ---
 const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
